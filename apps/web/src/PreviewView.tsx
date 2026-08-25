@@ -18,7 +18,7 @@ import {
   X,
 } from "lucide-react";
 import { api, type PresentationDetails, type PresentationNode } from "./api";
-import { PdfPageCanvas } from "./PdfPage";
+import { PdfPageCanvas, usePdfPageAspectRatio } from "./PdfPage";
 
 type InteractionStatus = "NOT_OPEN" | "ACCEPTING" | "LOCKED";
 
@@ -160,6 +160,7 @@ export default function PreviewView() {
   const [submittedOption, setSubmittedOption] = useState<number | null>(null);
   const [counts, setCounts] = useState<number[]>([]);
   const [error, setError] = useState("");
+  const [projectorSize, setProjectorSize] = useState({ width: 0, height: 0 });
   const projectorRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -175,8 +176,34 @@ export default function PreviewView() {
   const isPdf = currentNode?.type === "PDF_PAGE";
   const isRating = currentNode?.type === "RATING";
   const isQuiz = currentNode?.config.assessmentMode === "QUIZ";
+  const referencePdf = presentation?.nodes.find((node) => node.type === "PDF_PAGE" && node.config.objectKey && node.config.pageNumber);
+  const slideAspectRatio = usePdfPageAspectRatio(referencePdf?.config.objectKey, referencePdf?.config.pageNumber);
+  const pollWidth = Math.min(projectorSize.width, projectorSize.height * slideAspectRatio);
+  const pollHeight = pollWidth / slideAspectRatio;
   const total = counts.reduce((sum, count) => sum + count, 0);
   const ratingAverage = total ? options.reduce((sum, option, index) => sum + Number(option) * (counts[index] ?? 0), 0) / total : 0;
+
+  useEffect(() => {
+    const projector = projectorRef.current;
+    if (!projector) return;
+    let animationFrame = 0;
+    const updateSize = () => {
+      window.cancelAnimationFrame(animationFrame);
+      animationFrame = window.requestAnimationFrame(() => {
+        const next = { width: projector.clientWidth, height: projector.clientHeight };
+        setProjectorSize((current) => current.width === next.width && current.height === next.height ? current : next);
+      });
+    };
+    updateSize();
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(projector);
+    document.addEventListener("fullscreenchange", updateSize);
+    return () => {
+      observer.disconnect();
+      document.removeEventListener("fullscreenchange", updateSize);
+      window.cancelAnimationFrame(animationFrame);
+    };
+  }, [presentation]);
 
   useEffect(() => {
     setStatus(currentNode?.type === "MULTIPLE_CHOICE" || currentNode?.type === "RATING" ? "ACCEPTING" : "NOT_OPEN");
@@ -240,11 +267,11 @@ export default function PreviewView() {
       <main className={phoneVisible ? "preview-workspace" : "preview-workspace phone-hidden"}>
         <section className="preview-projector-column">
           <div className="preview-column-heading"><span>PROJEKTIONSANSICHT</span><small>{isPdf ? `PDF · Seite ${currentNode?.sourcePageNumber}` : status === "ACCEPTING" ? "Antworten offen" : status === "LOCKED" ? "Antworten gesperrt" : "Noch nicht geöffnet"}</small></div>
-          <div className={`preview-projector${isPdf ? " is-pdf" : ""}`} ref={projectorRef}>
+          <div className={`preview-projector ${isPdf ? "is-pdf" : "is-poll"}`} ref={projectorRef}>
             {isPdf && currentNode?.config.objectKey && currentNode.config.pageNumber ? (
               <div className="preview-projector-pdf"><PdfPageCanvas objectKey={currentNode.config.objectKey} pageNumber={currentNode.config.pageNumber} fitContainer /></div>
             ) : (
-              <div className="preview-projector-poll">
+              <div className="preview-projector-poll" style={pollWidth > 0 && pollHeight > 0 ? { width: pollWidth, height: pollHeight } : { aspectRatio: slideAspectRatio }}>
                 <p className="stage-kicker">{isRating ? "LIVE-SKALA" : isQuiz ? "WISSENSFRAGE" : "LIVE-UMFRAGE"}</p>
                 <h1>{currentNode?.config.question ?? "Neue Frage"}</h1>
                 <p>{isRating ? "Wählen Sie eine Bewertung" : "Eine Antwort auswählen"}</p>
