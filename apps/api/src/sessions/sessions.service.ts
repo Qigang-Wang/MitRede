@@ -16,6 +16,10 @@ type PollConfig = {
   options: string[];
   maxSelections?: number;
   resultDisplayMode?: "MANUAL" | "LIVE";
+  min?: number;
+  max?: number;
+  minLabel?: string;
+  maxLabel?: string;
 };
 
 @Injectable()
@@ -99,6 +103,10 @@ export class SessionsService {
           type: node.type,
           question: config.question ?? "Interaktion",
           options: config.options ?? [],
+          min: config.min,
+          max: config.max,
+          minLabel: config.minLabel,
+          maxLabel: config.maxLabel,
           total: answers.length,
           counts,
         };
@@ -149,16 +157,16 @@ export class SessionsService {
     if (!currentNode) throw new BadRequestException("Die Präsentation enthält keine Seiten");
 
     const currentConfig = currentNode.config as PollConfig;
+    const isInteractive = currentNode.type === "MULTIPLE_CHOICE" || currentNode.type === "RATING";
     const session = await this.prisma.liveSession.create({
       data: {
         presentationId,
         roomCode: await this.roomCode(),
         status: "LIVE",
         currentNodeId: currentNode.id,
-        interactionStatus:
-          currentNode.type === "MULTIPLE_CHOICE" ? "ACCEPTING" : "NOT_OPEN",
+        interactionStatus: isInteractive ? "ACCEPTING" : "NOT_OPEN",
         resultsVisible:
-          currentNode.type === "MULTIPLE_CHOICE" && currentConfig.resultDisplayMode === "LIVE",
+          isInteractive && currentConfig.resultDisplayMode === "LIVE",
         controllerUserId: presentation.ownerId,
         startedAt: new Date(),
         expiresAt: new Date(Date.now() + 12 * 60 * 60 * 1000),
@@ -314,9 +322,10 @@ export class SessionsService {
       });
       if (!node) throw new BadRequestException("Seite gehört nicht zu dieser Präsentation");
       data.currentNode = { connect: { id: node.id } };
-      data.interactionStatus = node.type === "MULTIPLE_CHOICE" ? "ACCEPTING" : "NOT_OPEN";
+      const isInteractive = node.type === "MULTIPLE_CHOICE" || node.type === "RATING";
+      data.interactionStatus = isInteractive ? "ACCEPTING" : "NOT_OPEN";
       const nodeConfig = node.config as PollConfig;
-      data.resultsVisible = node.type === "MULTIPLE_CHOICE" && nodeConfig.resultDisplayMode === "LIVE";
+      data.resultsVisible = isInteractive && nodeConfig.resultDisplayMode === "LIVE";
     }
 
     const session = await this.prisma.liveSession.update({ where: { id }, data }).catch(() => null);

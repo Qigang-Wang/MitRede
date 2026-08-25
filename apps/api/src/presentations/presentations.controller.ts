@@ -13,6 +13,7 @@ import {
 import { FileInterceptor } from "@nestjs/platform-express";
 import { ApiBody, ApiConsumes, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { CreatePollDto } from "./dto/create-poll.dto";
+import { CreateRatingDto } from "./dto/create-rating.dto";
 import { CreatePresentationDto } from "./dto/create-presentation.dto";
 import { ReorderNodesDto } from "./dto/reorder-nodes.dto";
 import { PresentationsService } from "./presentations.service";
@@ -62,6 +63,12 @@ export class PresentationsController {
     return this.presentations.addPoll(id, body);
   }
 
+  @Post(":id/ratings")
+  @ApiOperation({ summary: "Fügt eine Skalenfrage hinzu" })
+  addRating(@Param("id") id: string, @Body() body: CreateRatingDto) {
+    return this.presentations.addRating(id, body);
+  }
+
   @Patch(":id/nodes/order")
   @ApiOperation({ summary: "Sortiert die Knoten einer Präsentation" })
   reorder(@Param("id") id: string, @Body() body: ReorderNodesDto) {
@@ -76,6 +83,16 @@ export class PresentationsController {
     @Body() body: CreatePollDto,
   ) {
     return this.presentations.updatePoll(id, nodeId, body);
+  }
+
+  @Patch(":id/nodes/:nodeId/rating")
+  @ApiOperation({ summary: "Aktualisiert eine Skalenfrage" })
+  updateRating(
+    @Param("id") id: string,
+    @Param("nodeId") nodeId: string,
+    @Body() body: CreateRatingDto,
+  ) {
+    return this.presentations.updateRating(id, nodeId, body);
   }
 
   @Post(":id/nodes/:nodeId/duplicate")

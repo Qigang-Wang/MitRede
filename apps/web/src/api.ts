@@ -22,6 +22,10 @@ export type PollConfig = {
   originalName?: string;
   pageNumber?: number;
   resultDisplayMode?: "MANUAL" | "LIVE";
+  min?: number;
+  max?: number;
+  minLabel?: string;
+  maxLabel?: string;
 };
 
 export type PresentationNode = {
@@ -73,6 +77,10 @@ export type SessionQuestionResult = {
   options: string[];
   total: number;
   counts: number[];
+  min?: number;
+  max?: number;
+  minLabel?: string;
+  maxLabel?: string;
 };
 
 export type SessionResults = {
@@ -139,11 +147,34 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ question, options }),
     }),
+  addRating: (presentationId: string) =>
+    request<PresentationNode>(`/presentations/${presentationId}/ratings`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        question: "Wie bewerten Sie diesen Aspekt?",
+        min: 1,
+        max: 5,
+        minLabel: "Sehr niedrig",
+        maxLabel: "Sehr hoch",
+        resultDisplayMode: "MANUAL",
+      }),
+    }),
   updatePoll: (presentationId: string, nodeId: string, question: string, options: string[], resultDisplayMode: "MANUAL" | "LIVE") =>
     request<PresentationNode>(`/presentations/${presentationId}/nodes/${nodeId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ question, options, resultDisplayMode }),
+    }),
+  updateRating: (
+    presentationId: string,
+    nodeId: string,
+    body: { question: string; min: number; max: number; minLabel: string; maxLabel: string; resultDisplayMode: "MANUAL" | "LIVE" },
+  ) =>
+    request<PresentationNode>(`/presentations/${presentationId}/nodes/${nodeId}/rating`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
     }),
   duplicateNode: (presentationId: string, nodeId: string) =>
     request<PresentationNode>(`/presentations/${presentationId}/nodes/${nodeId}/duplicate`, { method: "POST" }),

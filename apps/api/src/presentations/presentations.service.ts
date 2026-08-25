@@ -10,6 +10,7 @@ import { resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { PrismaService } from "../database/prisma.service";
 import type { CreatePollDto } from "./dto/create-poll.dto";
+import type { CreateRatingDto } from "./dto/create-rating.dto";
 
 const demoEmail = "demo@mitrede.local";
 
@@ -189,6 +190,63 @@ export class PresentationsService {
       await tx.presentation.update({ where: { id }, data: { revision: { increment: 1 } } });
       return updated;
     });
+  }
+
+  async addRating(id: string, body: CreateRatingDto) {
+    await this.get(id);
+    this.validateRatingRange(body.min, body.max);
+    const aggregate = await this.prisma.presentationNode.aggregate({
+      where: { presentationId: id },
+      _max: { position: true },
+    });
+    return this.prisma.$transaction(async (tx) => {
+      const created = await tx.presentationNode.create({
+        data: {
+          presentationId: id,
+          position: (aggregate._max.position ?? -1) + 1,
+          type: "RATING",
+          config: this.ratingConfig(body),
+        },
+      });
+      await tx.presentation.update({ where: { id }, data: { revision: { increment: 1 } } });
+      return created;
+    });
+  }
+
+  async updateRating(id: string, nodeId: string, body: CreateRatingDto) {
+    const node = await this.prisma.presentationNode.findFirst({
+      where: { id: nodeId, presentationId: id },
+    });
+    if (!node) throw new NotFoundException("Skalenfrage nicht gefunden");
+    if (node.type !== "RATING") throw new BadRequestException("Diese Seite ist keine Skalenfrage");
+    this.validateRatingRange(body.min, body.max);
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.presentationNode.update({
+        where: { id: nodeId },
+        data: { config: this.ratingConfig(body) },
+      });
+      await tx.presentation.update({ where: { id }, data: { revision: { increment: 1 } } });
+      return updated;
+    });
+  }
+
+  private validateRatingRange(min: number, max: number) {
+    if (max <= min || max - min > 10) {
+      throw new BadRequestException("Die Skala benötigt einen gültigen Bereich");
+    }
+  }
+
+  private ratingConfig(body: CreateRatingDto): Prisma.InputJsonObject {
+    return {
+      question: body.question.trim(),
+      min: body.min,
+      max: body.max,
+      minLabel: body.minLabel.trim(),
+      maxLabel: body.maxLabel.trim(),
+      options: Array.from({ length: body.max - body.min + 1 }, (_, index) => String(body.min + index)),
+      maxSelections: 1,
+      resultDisplayMode: body.resultDisplayMode ?? "MANUAL",
+    };
   }
 
   async duplicate(id: string, nodeId: string) {

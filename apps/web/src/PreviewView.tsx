@@ -36,7 +36,7 @@ function seedCounts(optionCount: number) {
   return Array.from({ length: optionCount }, (_, index) => samples[index] ?? 0);
 }
 
-function ResultBars({ options, counts, compact = false }: { options: string[]; counts: number[]; compact?: boolean }) {
+function ResultBars({ options, counts, compact = false, rating = false }: { options: string[]; counts: number[]; compact?: boolean; rating?: boolean }) {
   const total = counts.reduce((sum, count) => sum + count, 0);
   return (
     <div className={compact ? "preview-results compact" : "preview-results"}>
@@ -45,7 +45,7 @@ function ResultBars({ options, counts, compact = false }: { options: string[]; c
         const percentage = total ? Math.round((count / total) * 100) : 0;
         return (
           <div className="preview-result-row" key={`${index}-${option}`}>
-            {!compact && <span className="preview-result-letter">{String.fromCharCode(65 + index)}</span>}
+            {!compact && <span className="preview-result-letter">{rating ? option : String.fromCharCode(65 + index)}</span>}
             <div className="preview-result-data">
               <div><strong>{option}</strong><span>{compact ? `${percentage}%` : `${count} Stimmen · ${percentage}%`}</span></div>
               <i><b style={{ width: `${percentage}%` }} /></i>
@@ -79,6 +79,7 @@ function PhonePreview({
   onReset: () => void;
 }) {
   const isPdf = node?.type === "PDF_PAGE";
+  const isRating = node?.type === "RATING";
   const options = node?.config.options ?? [];
 
   return (
@@ -110,7 +111,7 @@ function PhonePreview({
               <span>ABSTIMMUNG BEENDET</span>
               <h2>Antworten sind nicht mehr möglich.</h2>
               <p>Die Moderation hat die Abstimmung geschlossen.</p>
-              {resultsVisible && <ResultBars options={options} counts={counts} compact />}
+              {resultsVisible && <ResultBars options={options} counts={counts} compact rating={isRating} />}
             </div>
           ) : submittedOption !== null ? (
             <div className="preview-phone-response">
@@ -119,20 +120,21 @@ function PhonePreview({
               <h2>Vielen Dank!</h2>
               <p>Ihre Auswahl: <strong>{options[submittedOption]}</strong></p>
               {status === "ACCEPTING" && <button className="preview-phone-link" onClick={onReset}><RotateCcw size={14} /> Antwort ändern</button>}
-              {resultsVisible && <ResultBars options={options} counts={counts} compact />}
+              {resultsVisible && <ResultBars options={options} counts={counts} compact rating={isRating} />}
             </div>
           ) : (
             <div className="preview-phone-poll">
-              <span>LIVE-UMFRAGE</span>
+              <span>{isRating ? "LIVE-SKALA" : "LIVE-UMFRAGE"}</span>
               <h2>{node?.config.question ?? "Neue Frage"}</h2>
-              <p>Eine Antwort auswählen</p>
-              <div className="preview-phone-options">
+              <p>{isRating ? "Wählen Sie eine Bewertung" : "Eine Antwort auswählen"}</p>
+              <div className={isRating ? "preview-phone-options rating" : "preview-phone-options"}>
                 {options.map((option, index) => (
                   <button className={selectedOption === index ? "selected" : ""} key={`${index}-${option}`} onClick={() => onSelect(index)}>
-                    <span>{String.fromCharCode(65 + index)}</span><strong>{option}</strong>{selectedOption === index && <Check size={16} />}
+                    <span>{isRating ? option : String.fromCharCode(65 + index)}</span>{!isRating && <strong>{option}</strong>}{selectedOption === index && <Check size={16} />}
                   </button>
                 ))}
               </div>
+              {isRating && <div className="preview-phone-rating-labels"><span>{node?.config.minLabel}</span><span>{node?.config.maxLabel}</span></div>}
               <button className="btn btn-primary preview-phone-submit" disabled={selectedOption === null} onClick={onSubmit}>Antwort senden</button>
             </div>
           )}
@@ -168,7 +170,9 @@ export default function PreviewView() {
   const currentNode = presentation?.nodes[currentIndex] ?? null;
   const options = currentNode?.config.options ?? [];
   const isPdf = currentNode?.type === "PDF_PAGE";
+  const isRating = currentNode?.type === "RATING";
   const total = counts.reduce((sum, count) => sum + count, 0);
+  const ratingAverage = total ? options.reduce((sum, option, index) => sum + Number(option) * (counts[index] ?? 0), 0) / total : 0;
 
   useEffect(() => {
     setStatus("NOT_OPEN");
@@ -237,10 +241,11 @@ export default function PreviewView() {
               <div className="preview-projector-pdf"><PdfPageCanvas objectKey={currentNode.config.objectKey} pageNumber={currentNode.config.pageNumber} /></div>
             ) : (
               <div className="preview-projector-poll">
-                <p className="stage-kicker">LIVE-UMFRAGE</p>
+                <p className="stage-kicker">{isRating ? "LIVE-SKALA" : "LIVE-UMFRAGE"}</p>
                 <h1>{currentNode?.config.question ?? "Neue Frage"}</h1>
-                <p>Eine Antwort auswählen</p>
-                {resultsVisible ? <ResultBars options={options} counts={counts} /> : (
+                <p>{isRating ? "Wählen Sie eine Bewertung" : "Eine Antwort auswählen"}</p>
+                {resultsVisible && isRating && <div className="preview-rating-average"><strong>{ratingAverage.toFixed(1)}</strong><span>Durchschnitt</span></div>}
+                {resultsVisible ? <ResultBars options={options} counts={counts} rating={isRating} /> : (
                   <div className="preview-results-placeholder"><BarChart3 size={32} /><strong>Ergebnisse verborgen</strong><span>Öffnen Sie die Abstimmung oder blenden Sie die simulierten Ergebnisse ein.</span></div>
                 )}
                 <div className="preview-projector-count"><Check size={15} /> {total} simulierte Antworten</div>

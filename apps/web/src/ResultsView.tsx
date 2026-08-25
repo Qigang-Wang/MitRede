@@ -39,6 +39,11 @@ function formatDuration(startedAt: string | null, endedAt: string | null) {
   return minutes < 60 ? `${minutes} Min.` : `${Math.floor(minutes / 60)} Std. ${minutes % 60} Min.`;
 }
 
+function averageRating(options: string[], counts: number[], total: number) {
+  if (!total) return 0;
+  return options.reduce((sum, option, index) => sum + Number(option) * (counts[index] ?? 0), 0) / total;
+}
+
 function ResultsBrand() {
   return <div className="brand"><span className="brand-mark"><MessageCircleMore size={22} /></span><span>MitRede</span></div>;
 }
@@ -169,18 +174,21 @@ export default function ResultsView() {
                 </div>
                 <div className="question-results">
                   {results.questions.length === 0 && <div className="results-empty"><strong>Keine Interaktionen</strong><span>Diese Präsentation enthält noch keine auswertbaren Fragen.</span></div>}
-                  {results.questions.map((question, questionIndex) => (
-                    <article className="question-result-card" key={question.nodeId}>
-                      <div className="question-result-heading"><span>{questionIndex + 1}</span><div><small>SINGLE CHOICE</small><h3>{question.question}</h3></div><strong>{question.total} Antworten</strong></div>
+                  {results.questions.map((question, questionIndex) => {
+                    const isRating = question.type === "RATING";
+                    const average = averageRating(question.options, question.counts, question.total);
+                    return <article className="question-result-card" key={question.nodeId}>
+                      <div className="question-result-heading"><span>{questionIndex + 1}</span><div><small>{isRating ? "SKALA" : "SINGLE CHOICE"}</small><h3>{question.question}</h3></div><strong>{isRating ? `Ø ${average.toFixed(1)}` : `${question.total} Antworten`}</strong></div>
+                      {isRating && <div className="result-rating-summary"><strong>{average.toFixed(1)}</strong><span>Durchschnitt aus {question.total} Bewertungen</span><small>{question.minLabel} · {question.min}–{question.max} · {question.maxLabel}</small></div>}
                       <div className="question-result-bars">
                         {question.options.map((option, index) => {
                           const count = question.counts[index] ?? 0;
                           const percentage = question.total ? Math.round((count / question.total) * 100) : 0;
-                          return <div key={`${index}-${option}`}><span>{String.fromCharCode(65 + index)}</span><section><div><strong>{option}</strong><small>{count} · {percentage}%</small></div><i><b style={{ width: `${percentage}%` }} /></i></section></div>;
+                          return <div key={`${index}-${option}`}><span>{isRating ? option : String.fromCharCode(65 + index)}</span><section><div><strong>{isRating ? `${option} Punkte` : option}</strong><small>{count} · {percentage}%</small></div><i><b style={{ width: `${percentage}%` }} /></i></section></div>;
                         })}
                       </div>
-                    </article>
-                  ))}
+                    </article>;
+                  })}
                 </div>
               </>
             )}
