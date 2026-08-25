@@ -15,6 +15,7 @@ type PollConfig = {
   question: string;
   options: string[];
   maxSelections?: number;
+  resultDisplayMode?: "MANUAL" | "LIVE";
 };
 
 @Injectable()
@@ -147,6 +148,7 @@ export class SessionsService {
     const currentNode = presentation.nodes[0];
     if (!currentNode) throw new BadRequestException("Die Präsentation enthält keine Seiten");
 
+    const currentConfig = currentNode.config as PollConfig;
     const session = await this.prisma.liveSession.create({
       data: {
         presentationId,
@@ -155,6 +157,8 @@ export class SessionsService {
         currentNodeId: currentNode.id,
         interactionStatus:
           currentNode.type === "MULTIPLE_CHOICE" ? "ACCEPTING" : "NOT_OPEN",
+        resultsVisible:
+          currentNode.type === "MULTIPLE_CHOICE" && currentConfig.resultDisplayMode === "LIVE",
         controllerUserId: presentation.ownerId,
         startedAt: new Date(),
         expiresAt: new Date(Date.now() + 12 * 60 * 60 * 1000),
@@ -311,7 +315,8 @@ export class SessionsService {
       if (!node) throw new BadRequestException("Seite gehört nicht zu dieser Präsentation");
       data.currentNode = { connect: { id: node.id } };
       data.interactionStatus = node.type === "MULTIPLE_CHOICE" ? "ACCEPTING" : "NOT_OPEN";
-      data.resultsVisible = false;
+      const nodeConfig = node.config as PollConfig;
+      data.resultsVisible = node.type === "MULTIPLE_CHOICE" && nodeConfig.resultDisplayMode === "LIVE";
     }
 
     const session = await this.prisma.liveSession.update({ where: { id }, data }).catch(() => null);

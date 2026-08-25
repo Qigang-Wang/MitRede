@@ -50,6 +50,7 @@ export class PresentationsService {
                 "Projektorganisation",
               ],
               maxSelections: 1,
+              resultDisplayMode: "MANUAL",
             },
           },
         },
@@ -123,6 +124,7 @@ export class PresentationsService {
         question: "Was ist Ihre wichtigste Erkenntnis aus dieser Präsentation?",
         options: ["Neue Perspektive", "Konkrete Idee", "Offene Frage"],
         maxSelections: 1,
+        resultDisplayMode: "MANUAL",
       },
     });
 
@@ -153,6 +155,7 @@ export class PresentationsService {
             question: body.question.trim(),
             options: body.options.map((option) => option.trim()),
             maxSelections: 1,
+            resultDisplayMode: body.resultDisplayMode ?? "MANUAL",
           },
         },
       });
@@ -170,6 +173,7 @@ export class PresentationsService {
     if (node.type !== "MULTIPLE_CHOICE") {
       throw new BadRequestException("PDF-Seiten können nicht als Frage bearbeitet werden");
     }
+    const existingConfig = node.config as { resultDisplayMode?: "MANUAL" | "LIVE" };
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.presentationNode.update({
         where: { id: nodeId },
@@ -178,6 +182,7 @@ export class PresentationsService {
             question: body.question.trim(),
             options: body.options.map((option) => option.trim()),
             maxSelections: 1,
+            resultDisplayMode: body.resultDisplayMode ?? existingConfig.resultDisplayMode ?? "MANUAL",
           },
         },
       });

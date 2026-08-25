@@ -172,7 +172,7 @@ export default function PreviewView() {
 
   useEffect(() => {
     setStatus("NOT_OPEN");
-    setResultsVisible(false);
+    setResultsVisible(currentNode?.config.resultDisplayMode === "LIVE");
     setSelectedOption(null);
     setSubmittedOption(null);
     setCounts(seedCounts(options.length));

@@ -21,6 +21,7 @@ export type PollConfig = {
   objectKey?: string;
   originalName?: string;
   pageNumber?: number;
+  resultDisplayMode?: "MANUAL" | "LIVE";
 };
 
 export type PresentationNode = {
@@ -138,11 +139,11 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ question, options }),
     }),
-  updatePoll: (presentationId: string, nodeId: string, question: string, options: string[]) =>
+  updatePoll: (presentationId: string, nodeId: string, question: string, options: string[], resultDisplayMode: "MANUAL" | "LIVE") =>
     request<PresentationNode>(`/presentations/${presentationId}/nodes/${nodeId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question, options }),
+      body: JSON.stringify({ question, options, resultDisplayMode }),
     }),
   duplicateNode: (presentationId: string, nodeId: string) =>
     request<PresentationNode>(`/presentations/${presentationId}/nodes/${nodeId}/duplicate`, { method: "POST" }),

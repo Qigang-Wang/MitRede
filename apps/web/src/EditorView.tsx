@@ -43,6 +43,7 @@ export default function EditorView() {
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [question, setQuestion] = useState("");
   const [options, setOptions] = useState<string[]>([]);
+  const [resultDisplayMode, setResultDisplayMode] = useState<"MANUAL" | "LIVE">("MANUAL");
   const [dirty, setDirty] = useState(false);
   const [saveState, setSaveState] = useState<"saved" | "saving" | "error">("saved");
   const [error, setError] = useState("");
@@ -72,6 +73,7 @@ export default function EditorView() {
     if (!selected || selected.type === "PDF_PAGE") return;
     setQuestion(selected.config.question ?? "");
     setOptions(selected.config.options ?? []);
+    setResultDisplayMode(selected.config.resultDisplayMode ?? "MANUAL");
     setDirty(false);
     setSaveState("saved");
   }, [selected?.id]);
@@ -83,7 +85,7 @@ export default function EditorView() {
       setSaveState("saving");
       try {
         const cleanOptions = options.map((option) => option.trim()).filter(Boolean);
-        const updated = await api.updatePoll(presentationId, selected.id, question.trim(), cleanOptions);
+        const updated = await api.updatePoll(presentationId, selected.id, question.trim(), cleanOptions, resultDisplayMode);
         setPresentation((current) => current ? { ...current, nodes: current.nodes.map((node) => node.id === updated.id ? updated : node) } : current);
         setDirty(false);
         setSaveState("saved");
@@ -92,7 +94,7 @@ export default function EditorView() {
       }
     }, 700);
     return () => window.clearTimeout(timer);
-  }, [dirty, options, presentationId, question, selected]);
+  }, [dirty, options, presentationId, question, resultDisplayMode, selected]);
 
   async function insertAfter(index: number) {
     if (!presentation) return;
@@ -188,7 +190,7 @@ export default function EditorView() {
 
       <aside className="properties-panel">
         <div className="panel-heading"><span>EIGENSCHAFTEN</span><strong>{selected?.type === "PDF_PAGE" ? "PDF-Seite" : "Single Choice"}</strong></div>
-        {selected?.type === "PDF_PAGE" ? <div className="pdf-properties"><FileText size={28} /><h3>Seite {selected.sourcePageNumber}</h3><p>{selected.config.originalName}</p><dl><div><dt>Typ</dt><dd>PDF</dd></div><div><dt>Position</dt><dd>{selected.position + 1}</dd></div></dl><p className="property-hint">PDF-Seiten bleiben in ihrer ursprünglichen Reihenfolge. Interaktionen können dazwischen verschoben werden.</p></div> : selected ? <div className="poll-properties"><label>Frage<textarea value={question} onChange={(event) => { setQuestion(event.target.value); setDirty(true); }} rows={4} /></label><div className="option-heading"><span>Antwortoptionen</span><small>{options.length} / 8</small></div>{options.map((option, index) => <div className="option-input" key={index}><span>{String.fromCharCode(65 + index)}</span><input value={option} onChange={(event) => { setOptions((current) => current.map((value, optionIndex) => optionIndex === index ? event.target.value : value)); setDirty(true); }} /><button disabled={options.length <= 2} onClick={() => { setOptions((current) => current.filter((_, optionIndex) => optionIndex !== index)); setDirty(true); }} aria-label="Option entfernen"><Trash2 size={15} /></button></div>)}<button className="add-option" disabled={options.length >= 8} onClick={() => { setOptions((current) => [...current, `Option ${current.length + 1}`]); setDirty(true); }}><Plus size={15} /> Option hinzufügen</button><div className="property-actions"><button onClick={() => void duplicate()}><Copy size={16} /> Duplizieren</button><button className="danger" onClick={() => void remove()}><Trash2 size={16} /> Löschen</button></div></div> : null}
+        {selected?.type === "PDF_PAGE" ? <div className="pdf-properties"><FileText size={28} /><h3>Seite {selected.sourcePageNumber}</h3><p>{selected.config.originalName}</p><dl><div><dt>Typ</dt><dd>PDF</dd></div><div><dt>Position</dt><dd>{selected.position + 1}</dd></div></dl><p className="property-hint">PDF-Seiten bleiben in ihrer ursprünglichen Reihenfolge. Interaktionen können dazwischen verschoben werden.</p></div> : selected ? <div className="poll-properties"><label>Frage<textarea value={question} onChange={(event) => { setQuestion(event.target.value); setDirty(true); }} rows={4} /></label><div className="option-heading"><span>Antwortoptionen</span><small>{options.length} / 8</small></div>{options.map((option, index) => <div className="option-input" key={index}><span>{String.fromCharCode(65 + index)}</span><input value={option} onChange={(event) => { setOptions((current) => current.map((value, optionIndex) => optionIndex === index ? event.target.value : value)); setDirty(true); }} /><button disabled={options.length <= 2} onClick={() => { setOptions((current) => current.filter((_, optionIndex) => optionIndex !== index)); setDirty(true); }} aria-label="Option entfernen"><Trash2 size={15} /></button></div>)}<button className="add-option" disabled={options.length >= 8} onClick={() => { setOptions((current) => [...current, `Option ${current.length + 1}`]); setDirty(true); }}><Plus size={15} /> Option hinzufügen</button><div className="result-display-setting"><div><strong>Ergebnisanzeige</strong><small>Wann sollen Stimmen auf der Leinwand erscheinen?</small></div><div className="result-display-options"><button className={resultDisplayMode === "MANUAL" ? "active" : ""} onClick={() => { setResultDisplayMode("MANUAL"); setDirty(true); }}><strong>Am Ende</strong><span>Manuell veröffentlichen</span></button><button className={resultDisplayMode === "LIVE" ? "active" : ""} onClick={() => { setResultDisplayMode("LIVE"); setDirty(true); }}><strong>Live</strong><span>Nach jeder Antwort</span></button></div><p>Die Antworten werden in beiden Modi sofort gespeichert.</p></div><div className="property-actions"><button onClick={() => void duplicate()}><Copy size={16} /> Duplizieren</button><button className="danger" onClick={() => void remove()}><Trash2 size={16} /> Löschen</button></div></div> : null}
         {error && <p className="form-error">{error}</p>}
       </aside>
     </div>
