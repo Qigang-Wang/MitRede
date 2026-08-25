@@ -61,20 +61,20 @@ function InteractionPicker({ onClose, onChoose }: { onClose: () => void; onChoos
   return (
     <div className="interaction-picker-backdrop" onMouseDown={onClose}>
       <section className="interaction-picker" role="dialog" aria-modal="true" aria-labelledby="interaction-picker-title" onMouseDown={(event) => event.stopPropagation()}>
-        <header><div><p className="eyebrow">SEITE EINFÜGEN</p><h2 id="interaction-picker-title">Interaktion auswählen</h2><p>Wählen Sie den passenden Seitentyp.</p></div><button onClick={onClose} aria-label="Schließen"><X size={19} /></button></header>
-        <div className="interaction-category participation"><div className="interaction-category-heading"><span>TEILNAHME</span><small>Zugang für das Publikum</small></div><div className="interaction-type-grid participation">
-          <button onClick={() => onChoose("JOIN_PAGE")}><span><QrCode size={24} /></span><strong>Teilnahmeseite</strong><small>QR-Code, Raumcode und kurze Anleitung</small></button>
+        <header><h2 id="interaction-picker-title">Interaktion auswählen</h2><button onClick={onClose} aria-label="Schließen"><X size={19} /></button></header>
+        <div className="interaction-category participation"><div className="interaction-category-heading"><span>TEILNAHME</span></div><div className="interaction-type-grid participation">
+          <button onClick={() => onChoose("JOIN_PAGE")}><span><QrCode size={24} /></span><strong>Teilnahmeseite</strong></button>
         </div></div>
-        <div className="interaction-category"><div className="interaction-category-heading"><span>MEINUNGEN &amp; FEEDBACK</span><small>Ohne richtige oder falsche Antwort</small></div><div className="interaction-type-grid feedback">
-          <button onClick={() => onChoose("MULTIPLE_CHOICE")}><span><ListChecks size={24} /></span><strong>Single Choice</strong><small>Eine Meinung aus mehreren Optionen</small></button>
-          <button onClick={() => onChoose("RATING")}><span><Gauge size={24} /></span><strong>Skala</strong><small>Bewertung auf einer Zahlen-Skala</small></button>
-          <button disabled><span><Cloud size={24} /></span><strong>Wortwolke</strong><small>Freie Begriffe gemeinsam sammeln</small><i>DEMNÄCHST</i></button>
-          <button disabled><span><MessageSquareText size={24} /></span><strong>Offene Frage</strong><small>Antworten in eigenen Worten</small><i>DEMNÄCHST</i></button>
+        <div className="interaction-category"><div className="interaction-category-heading"><span>MEINUNGEN &amp; FEEDBACK</span></div><div className="interaction-type-grid feedback">
+          <button onClick={() => onChoose("MULTIPLE_CHOICE")}><span><ListChecks size={24} /></span><strong>Single Choice</strong></button>
+          <button onClick={() => onChoose("RATING")}><span><Gauge size={24} /></span><strong>Skala</strong></button>
+          <button disabled><span><Cloud size={24} /></span><strong>Wortwolke</strong><i>DEMNÄCHST</i></button>
+          <button disabled><span><MessageSquareText size={24} /></span><strong>Offene Frage</strong><i>DEMNÄCHST</i></button>
         </div></div>
-        <div className="interaction-category quiz"><div className="interaction-category-heading"><span>QUIZ &amp; WISSEN</span><small>Mit Auswertung als richtig oder falsch</small></div><div className="interaction-type-grid quiz">
-          <button onClick={() => onChoose("QUIZ")}><span><Trophy size={24} /></span><strong>Single Choice Quiz</strong><small>Eine richtige Antwort festlegen</small></button>
-          <button disabled><span><ListChecks size={24} /></span><strong>Multiple Choice Quiz</strong><small>Mehrere richtige Antworten</small><i>DEMNÄCHST</i></button>
-          <button disabled><span><Check size={24} /></span><strong>Richtig / Falsch</strong><small>Schnelle Wissensprüfung</small><i>DEMNÄCHST</i></button>
+        <div className="interaction-category quiz"><div className="interaction-category-heading"><span>QUIZ &amp; WISSEN</span></div><div className="interaction-type-grid quiz">
+          <button onClick={() => onChoose("QUIZ")}><span><Trophy size={24} /></span><strong>Single Choice Quiz</strong></button>
+          <button disabled><span><ListChecks size={24} /></span><strong>Multiple Choice Quiz</strong><i>DEMNÄCHST</i></button>
+          <button disabled><span><Check size={24} /></span><strong>Richtig / Falsch</strong><i>DEMNÄCHST</i></button>
         </div></div>
       </section>
     </div>
