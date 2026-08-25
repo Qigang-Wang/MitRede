@@ -175,7 +175,7 @@ export default function PreviewView() {
   const ratingAverage = total ? options.reduce((sum, option, index) => sum + Number(option) * (counts[index] ?? 0), 0) / total : 0;
 
   useEffect(() => {
-    setStatus("NOT_OPEN");
+    setStatus(currentNode?.type === "MULTIPLE_CHOICE" || currentNode?.type === "RATING" ? "ACCEPTING" : "NOT_OPEN");
     setResultsVisible(currentNode?.config.resultDisplayMode === "LIVE");
     setSelectedOption(null);
     setSubmittedOption(null);
