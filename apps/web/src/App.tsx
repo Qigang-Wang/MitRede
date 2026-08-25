@@ -32,12 +32,14 @@ import {
   type SessionSnapshot,
 } from "./api";
 import EditorView from "./EditorView";
+import PreviewView from "./PreviewView";
 import { PdfPageCanvas } from "./PdfPage";
 
-type Route = "dashboard" | "editor" | "present" | "join";
+type Route = "dashboard" | "editor" | "preview" | "present" | "join";
 
 function currentRoute(): Route {
   if (/^\/app\/presentations\/[^/]+\/edit/.test(window.location.pathname)) return "editor";
+  if (window.location.pathname.startsWith("/preview/")) return "preview";
   if (window.location.pathname.startsWith("/present/")) return "present";
   if (window.location.pathname.startsWith("/join/")) return "join";
   return "dashboard";
@@ -303,6 +305,7 @@ export default function App() {
   const [route, setRoute] = useState<Route>(currentRoute);
   useEffect(() => { const updateRoute = () => setRoute(currentRoute()); window.addEventListener("popstate", updateRoute); return () => window.removeEventListener("popstate", updateRoute); }, []);
   if (route === "editor") return <EditorView />;
+  if (route === "preview") return <PreviewView />;
   if (route === "present") return <PresenterView />;
   if (route === "join") return <JoinView />;
   return <Dashboard />;

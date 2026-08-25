@@ -9,6 +9,7 @@ import {
   Play,
   Plus,
   Save,
+  ScanEye,
   Trash2,
   Vote,
 } from "lucide-react";
@@ -45,19 +46,20 @@ export default function EditorView() {
   const [dirty, setDirty] = useState(false);
   const [saveState, setSaveState] = useState<"saved" | "saving" | "error">("saved");
   const [error, setError] = useState("");
+  const initialNodeId = useMemo(() => new URLSearchParams(window.location.search).get("node") ?? undefined, []);
 
   const load = useCallback(async (preferredId?: string) => {
     try {
       const next = await api.presentation(presentationId);
       setPresentation(next);
-      setSelectedId((current) => preferredId ?? current ?? next.nodes[0]?.id ?? null);
+      setSelectedId((current) => preferredId ?? current ?? initialNodeId ?? next.nodes[0]?.id ?? null);
       setError("");
       return next;
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Präsentation konnte nicht geladen werden");
       return null;
     }
-  }, [presentationId]);
+  }, [initialNodeId, presentationId]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -145,7 +147,10 @@ export default function EditorView() {
         <button className="editor-back" onClick={() => go("/app")}><ArrowLeft size={18} /> Übersicht</button>
         <EditorBrand />
         <div className="editor-title"><strong>{presentation.title}</strong><span className={`save-state ${saveState}`}>{saveState === "saving" ? <><Save size={13} /> Wird gespeichert…</> : saveState === "error" ? "Speichern fehlgeschlagen" : <><Check size={13} /> Gespeichert</>}</span></div>
-        <button className="btn btn-primary" onClick={() => void start()}><Play size={16} fill="currentColor" /> Präsentieren</button>
+        <div className="editor-topbar-actions">
+          <button className="btn editor-preview-button" onClick={() => go(`/preview/${presentationId}${selectedId ? `?node=${encodeURIComponent(selectedId)}` : ""}`)}><ScanEye size={17} /> Vorschau</button>
+          <button className="btn btn-primary" onClick={() => void start()}><Play size={16} fill="currentColor" /> Präsentieren</button>
+        </div>
       </header>
 
       <aside className="timeline-panel">
