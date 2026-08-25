@@ -20,6 +20,8 @@ type PollConfig = {
   max?: number;
   minLabel?: string;
   maxLabel?: string;
+  assessmentMode?: "FEEDBACK" | "QUIZ";
+  correctOptionIndex?: number;
 };
 
 @Injectable()
@@ -97,6 +99,9 @@ export class SessionsService {
             counts[value.optionIndex] = (counts[value.optionIndex] ?? 0) + 1;
           }
         }
+        const correctCount = config.assessmentMode === "QUIZ"
+          ? answers.filter((answer) => (answer.value as { optionIndex?: number }).optionIndex === config.correctOptionIndex).length
+          : undefined;
         return {
           nodeId: node.id,
           position: node.position,
@@ -107,6 +112,9 @@ export class SessionsService {
           max: config.max,
           minLabel: config.minLabel,
           maxLabel: config.maxLabel,
+          assessmentMode: config.assessmentMode ?? "FEEDBACK",
+          correctOptionIndex: config.correctOptionIndex,
+          correctCount,
           total: answers.length,
           counts,
         };
@@ -225,6 +233,8 @@ export class SessionsService {
         counts[value.optionIndex] = (counts[value.optionIndex] ?? 0) + 1;
       }
     }
+    const publicConfig = { ...config };
+    if (!includeTimeline && !session.resultsVisible) delete publicConfig.correctOptionIndex;
 
     return {
       sessionId: session.id,
@@ -235,7 +245,7 @@ export class SessionsService {
       stateVersion: session.stateVersion,
       presentation: session.presentation,
       currentNode: session.currentNode
-        ? { ...session.currentNode, config }
+        ? { ...session.currentNode, config: publicConfig }
         : null,
       timeline: includeTimeline ? (session.presentation.nodes ?? []) : undefined,
       results: { total: answers.length, counts },

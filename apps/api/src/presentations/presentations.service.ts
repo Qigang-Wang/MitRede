@@ -142,6 +142,7 @@ export class PresentationsService {
 
   async addPoll(id: string, body: CreatePollDto) {
     await this.get(id);
+    this.validateQuiz(body);
     const aggregate = await this.prisma.presentationNode.aggregate({
       where: { presentationId: id },
       _max: { position: true },
@@ -156,7 +157,9 @@ export class PresentationsService {
             question: body.question.trim(),
             options: body.options.map((option) => option.trim()),
             maxSelections: 1,
-            resultDisplayMode: body.resultDisplayMode ?? "MANUAL",
+            resultDisplayMode: body.assessmentMode === "QUIZ" ? "MANUAL" : body.resultDisplayMode ?? "MANUAL",
+            assessmentMode: body.assessmentMode ?? "FEEDBACK",
+            ...(body.assessmentMode === "QUIZ" ? { correctOptionIndex: body.correctOptionIndex ?? 0 } : {}),
           },
         },
       });
@@ -174,6 +177,7 @@ export class PresentationsService {
     if (node.type !== "MULTIPLE_CHOICE") {
       throw new BadRequestException("PDF-Seiten können nicht als Frage bearbeitet werden");
     }
+    this.validateQuiz(body);
     const existingConfig = node.config as { resultDisplayMode?: "MANUAL" | "LIVE" };
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.presentationNode.update({
@@ -183,13 +187,21 @@ export class PresentationsService {
             question: body.question.trim(),
             options: body.options.map((option) => option.trim()),
             maxSelections: 1,
-            resultDisplayMode: body.resultDisplayMode ?? existingConfig.resultDisplayMode ?? "MANUAL",
+            resultDisplayMode: body.assessmentMode === "QUIZ" ? "MANUAL" : body.resultDisplayMode ?? existingConfig.resultDisplayMode ?? "MANUAL",
+            assessmentMode: body.assessmentMode ?? "FEEDBACK",
+            ...(body.assessmentMode === "QUIZ" ? { correctOptionIndex: body.correctOptionIndex ?? 0 } : {}),
           },
         },
       });
       await tx.presentation.update({ where: { id }, data: { revision: { increment: 1 } } });
       return updated;
     });
+  }
+
+  private validateQuiz(body: CreatePollDto) {
+    if (body.assessmentMode === "QUIZ" && (body.correctOptionIndex === undefined || body.correctOptionIndex >= body.options.length)) {
+      throw new BadRequestException("Für ein Quiz muss eine gültige richtige Antwort gewählt werden");
+    }
   }
 
   async addRating(id: string, body: CreateRatingDto) {

@@ -26,6 +26,8 @@ export type PollConfig = {
   max?: number;
   minLabel?: string;
   maxLabel?: string;
+  assessmentMode?: "FEEDBACK" | "QUIZ";
+  correctOptionIndex?: number;
 };
 
 export type PresentationNode = {
@@ -81,6 +83,9 @@ export type SessionQuestionResult = {
   max?: number;
   minLabel?: string;
   maxLabel?: string;
+  assessmentMode?: "FEEDBACK" | "QUIZ";
+  correctOptionIndex?: number;
+  correctCount?: number;
 };
 
 export type SessionResults = {
@@ -147,6 +152,12 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ question, options }),
     }),
+  addQuiz: (presentationId: string) =>
+    request<PresentationNode>(`/presentations/${presentationId}/polls`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question: "Welche Antwort ist richtig?", options: ["Antwort 1", "Antwort 2", "Antwort 3"], assessmentMode: "QUIZ", correctOptionIndex: 0, resultDisplayMode: "MANUAL" }),
+    }),
   addRating: (presentationId: string) =>
     request<PresentationNode>(`/presentations/${presentationId}/ratings`, {
       method: "POST",
@@ -160,11 +171,11 @@ export const api = {
         resultDisplayMode: "MANUAL",
       }),
     }),
-  updatePoll: (presentationId: string, nodeId: string, question: string, options: string[], resultDisplayMode: "MANUAL" | "LIVE") =>
+  updatePoll: (presentationId: string, nodeId: string, question: string, options: string[], resultDisplayMode: "MANUAL" | "LIVE", assessmentMode: "FEEDBACK" | "QUIZ" = "FEEDBACK", correctOptionIndex = 0) =>
     request<PresentationNode>(`/presentations/${presentationId}/nodes/${nodeId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question, options, resultDisplayMode }),
+      body: JSON.stringify({ question, options, resultDisplayMode, assessmentMode, ...(assessmentMode === "QUIZ" ? { correctOptionIndex } : {}) }),
     }),
   updateRating: (
     presentationId: string,

@@ -1,4 +1,4 @@
-import { ArrayMaxSize, ArrayMinSize, IsArray, IsIn, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from "class-validator";
 
 export class CreatePollDto {
   @IsString()
@@ -17,4 +17,14 @@ export class CreatePollDto {
   @IsOptional()
   @IsIn(["MANUAL", "LIVE"])
   resultDisplayMode?: "MANUAL" | "LIVE";
+
+  @IsOptional()
+  @IsIn(["FEEDBACK", "QUIZ"])
+  assessmentMode?: "FEEDBACK" | "QUIZ";
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(7)
+  correctOptionIndex?: number;
 }

@@ -211,9 +211,9 @@ function LoadingScreen({ message }: { message: string }) {
   return <div className="status-screen"><Brand /><div className="status-spinner" /><p>{message}</p><button className="text-button" onClick={() => navigate("/app")}>Zur Übersicht</button></div>;
 }
 
-function SessionResultDisplay({ options, counts, total, rating }: { options: string[]; counts: number[]; total: number; rating: boolean }) {
+function SessionResultDisplay({ options, counts, total, rating, correctOptionIndex }: { options: string[]; counts: number[]; total: number; rating: boolean; correctOptionIndex?: number }) {
   const average = total ? options.reduce((sum, option, index) => sum + Number(option) * (counts[index] ?? 0), 0) / total : 0;
-  return <>{rating && <div className="live-rating-average"><strong>{average.toFixed(1)}</strong><span>Durchschnitt</span></div>}<div className={rating ? "result-list rating" : "result-list"}>{options.map((label, index) => { const count = counts[index] ?? 0; const percentage = total ? Math.round(count / total * 100) : 0; return <div className="result-row" key={label}><span className="result-letter">{rating ? label : String.fromCharCode(65 + index)}</span><div><div className="result-label"><strong>{rating ? `${label} Punkte` : label}</strong><span>{count} Stimmen · {percentage}%</span></div><div className="result-track"><span style={{ width: `${percentage}%` }} /></div></div></div>; })}</div></>;
+  return <>{rating && <div className="live-rating-average"><strong>{average.toFixed(1)}</strong><span>Durchschnitt</span></div>}<div className={rating ? "result-list rating" : "result-list"}>{options.map((label, index) => { const count = counts[index] ?? 0; const percentage = total ? Math.round(count / total * 100) : 0; return <div className={correctOptionIndex === index ? "result-row correct" : "result-row"} key={label}><span className="result-letter">{rating ? label : String.fromCharCode(65 + index)}</span><div><div className="result-label"><strong>{rating ? `${label} Punkte` : label}{correctOptionIndex === index && <Check size={17} />}</strong><span>{count} Stimmen · {percentage}%</span></div><div className="result-track"><span style={{ width: `${percentage}%` }} /></div></div></div>; })}</div></>;
 }
 
 function PresenterView() {
@@ -254,6 +254,7 @@ function PresenterView() {
   const currentIndex = timeline.findIndex((node) => node.id === snapshot.currentNode?.id);
   const isPdf = snapshot.currentNode?.type === "PDF_PAGE";
   const isRating = snapshot.currentNode?.type === "RATING";
+  const isQuiz = poll?.assessmentMode === "QUIZ";
 
   function move(offset: number) {
     const next = timeline[currentIndex + offset];
@@ -263,7 +264,7 @@ function PresenterView() {
   return (
     <div className="presenter-shell">
       <header className="presenter-topbar"><button className="icon-button dark" onClick={() => void endSession()} aria-label="Präsentation beenden" title="Präsentation beenden"><X size={21} /></button><div><strong>{snapshot.presentation.title}</strong><span className="live-badge"><i /> LIVE</span></div><div className="presenter-meta"><Users size={18} /> {total} Antworten <button className="room-code" onClick={() => navigate(`/join/${snapshot.roomCode}`)} title="Teilnahmeansicht öffnen"><QrCode size={18} /> {snapshot.roomCode.slice(0, 3)} {snapshot.roomCode.slice(3)}</button></div></header>
-      <main className="stage-wrap">{isPdf && poll?.objectKey && poll.pageNumber ? <div className="presented-pdf"><PdfPageCanvas objectKey={poll.objectKey} pageNumber={poll.pageNumber} /></div> : <div className="stage"><p className="stage-kicker">{isRating ? "LIVE-SKALA" : "LIVE-UMFRAGE"}</p><h1>{poll?.question ?? "Keine aktuelle Frage"}</h1><p className="stage-subtitle">{isRating ? "Wählen Sie eine Bewertung" : "Eine Antwort auswählen"}</p>{snapshot.resultsVisible ? <SessionResultDisplay options={poll?.options ?? []} counts={snapshot.results.counts} total={total} rating={isRating} /> : <div className="results-hidden"><BarChart3 size={34} /><strong>Ergebnisse verborgen</strong><span>Die Stimmen werden weiterhin gesammelt.</span></div>}<p className="answer-count"><Check size={16} /> {total} Antworten eingegangen</p></div>}</main>
+      <main className="stage-wrap">{isPdf && poll?.objectKey && poll.pageNumber ? <div className="presented-pdf"><PdfPageCanvas objectKey={poll.objectKey} pageNumber={poll.pageNumber} /></div> : <div className="stage"><p className="stage-kicker">{isRating ? "LIVE-SKALA" : isQuiz ? "WISSENSFRAGE" : "LIVE-UMFRAGE"}</p><h1>{poll?.question ?? "Keine aktuelle Frage"}</h1><p className="stage-subtitle">{isRating ? "Wählen Sie eine Bewertung" : "Eine Antwort auswählen"}</p>{snapshot.resultsVisible ? <SessionResultDisplay options={poll?.options ?? []} counts={snapshot.results.counts} total={total} rating={isRating} correctOptionIndex={isQuiz ? poll?.correctOptionIndex : undefined} /> : <div className="results-hidden"><BarChart3 size={34} /><strong>Ergebnisse verborgen</strong><span>Die Stimmen werden weiterhin gesammelt.</span></div>}<p className="answer-count"><Check size={16} /> {total} Antworten eingegangen</p></div>}</main>
       <footer className="presenter-controls"><div className="page-controls"><button disabled={currentIndex <= 0} onClick={() => move(-1)}><ArrowLeft size={19} /></button><span>{currentIndex + 1} / {timeline.length}</span><button disabled={currentIndex < 0 || currentIndex >= timeline.length - 1} onClick={() => move(1)}><ArrowRight size={19} /></button></div><div className="moderation-controls">{isPdf ? <span className="pdf-live-label"><FileText size={17} /> PDF-Seite {snapshot.currentNode?.sourcePageNumber}</span> : <><button className={snapshot.interactionStatus === "ACCEPTING" ? "control active" : "control"} onClick={() => void update({ interactionStatus: snapshot.interactionStatus === "ACCEPTING" ? "LOCKED" : "ACCEPTING" })}>{snapshot.interactionStatus === "ACCEPTING" ? <Radio size={18} /> : <Lock size={18} />}{snapshot.interactionStatus === "ACCEPTING" ? "Antworten offen" : "Antworten gesperrt"}</button><button className={snapshot.resultsVisible ? "control active" : "control"} onClick={() => void update({ resultsVisible: !snapshot.resultsVisible })}><BarChart3 size={18} /> {snapshot.resultsVisible ? "Ergebnisse sichtbar" : "Ergebnisse verborgen"}</button></>}</div><button className="control" onClick={() => document.documentElement.requestFullscreen?.()}><Fullscreen size={18} /></button></footer>
     </div>
   );
@@ -315,19 +316,22 @@ function JoinView() {
   const accepting = snapshot.interactionStatus === "ACCEPTING";
   const waitingForPresentation = snapshot.currentNode?.type === "PDF_PAGE";
   const isRating = snapshot.currentNode?.type === "RATING";
+  const isQuiz = snapshot.currentNode?.config.assessmentMode === "QUIZ";
+  const correctOptionIndex = snapshot.currentNode?.config.correctOptionIndex;
 
   return (
     <div className="join-shell">
       <header className="join-topbar"><Brand /><span><i /> Verbunden</span></header>
       <main className={waitingForPresentation ? "join-card join-wait" : "join-card"}>
         {waitingForPresentation ? <><FileText size={42} /><p className="eyebrow">PRÄSENTATION LÄUFT</p><h1>Bitte schauen Sie auf die Leinwand.</h1><p>Die nächste Interaktion erscheint automatisch auf diesem Gerät.</p></> : <>
-          <p className="eyebrow">{isRating ? "LIVE-SKALA" : "LIVE-UMFRAGE"} · RAUM {snapshot.roomCode}</p>
+          <p className="eyebrow">{isRating ? "LIVE-SKALA" : isQuiz ? "WISSENSFRAGE" : "LIVE-UMFRAGE"} · RAUM {snapshot.roomCode}</p>
           <h1>{snapshot.currentNode?.config.question ?? "Warten auf die nächste Frage"}</h1>
           <p>{accepting ? isRating ? "Wählen Sie eine Bewertung." : "Wählen Sie eine Antwort." : "Diese Frage ist derzeit gesperrt."}</p>
           <div className={isRating ? "join-options join-rating" : "join-options"}>{options.map((option, index) => <button className={selected === index ? "join-option selected" : "join-option"} key={option} disabled={!accepting} onClick={() => { setSelected(index); setSubmitted(false); }}><span>{isRating ? option : String.fromCharCode(65 + index)}</span>{!isRating && option}{selected === index && <Check size={20} />}</button>)}</div>
           {isRating && <div className="join-rating-labels"><span>{snapshot.currentNode?.config.minLabel}</span><span>{snapshot.currentNode?.config.maxLabel}</span></div>}
-          <button className="btn btn-primary submit-answer" disabled={!accepting || selected === null || sending} onClick={() => void submit()}>{submitted ? <><Check size={19} /> Bewertung gespeichert</> : sending ? "Wird gespeichert…" : isRating ? "Bewertung senden" : "Antwort senden"}</button>
-          {snapshot.resultsVisible && <div className="mobile-results"><strong>{isRating ? "Live-Verteilung" : "Live-Ergebnis"}</strong>{options.map((option, index) => { const count = snapshot.results.counts[index] ?? 0; const percentage = snapshot.results.total ? Math.round(count / snapshot.results.total * 100) : 0; return <div key={option}><span>{isRating ? `${option} Punkte` : option}</span><i><b style={{ width: `${percentage}%` }} /></i><small>{percentage}%</small></div>; })}</div>}
+          <button className="btn btn-primary submit-answer" disabled={!accepting || selected === null || sending} onClick={() => void submit()}>{submitted ? <><Check size={19} /> {isRating ? "Bewertung gespeichert" : "Antwort gespeichert"}</> : sending ? "Wird gespeichert…" : isRating ? "Bewertung senden" : "Antwort senden"}</button>
+          {submitted && isQuiz && snapshot.resultsVisible && correctOptionIndex !== undefined && selected !== null && <div className={selected === correctOptionIndex ? "quiz-feedback correct" : "quiz-feedback incorrect"}><strong>{selected === correctOptionIndex ? "Richtig!" : "Nicht ganz."}</strong>{selected !== correctOptionIndex && <span>Richtig ist: {options[correctOptionIndex]}</span>}</div>}
+          {snapshot.resultsVisible && <div className="mobile-results"><strong>{isRating ? "Live-Verteilung" : "Live-Ergebnis"}</strong>{options.map((option, index) => { const count = snapshot.results.counts[index] ?? 0; const percentage = snapshot.results.total ? Math.round(count / snapshot.results.total * 100) : 0; return <div className={isQuiz && correctOptionIndex === index ? "correct" : ""} key={option}><span>{isRating ? `${option} Punkte` : option}{isQuiz && correctOptionIndex === index && <Check size={13} />}</span><i><b style={{ width: `${percentage}%` }} /></i><small>{percentage}%</small></div>; })}</div>}
           {error && <p className="form-error">{error}</p>}<p className="privacy-note">Ihre Teilnahme ist anonym. Sie können Ihre Antwort ändern, solange die Interaktion geöffnet ist.</p>
         </>}
       </main>

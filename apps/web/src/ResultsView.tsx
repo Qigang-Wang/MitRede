@@ -176,15 +176,18 @@ export default function ResultsView() {
                   {results.questions.length === 0 && <div className="results-empty"><strong>Keine Interaktionen</strong><span>Diese Präsentation enthält noch keine auswertbaren Fragen.</span></div>}
                   {results.questions.map((question, questionIndex) => {
                     const isRating = question.type === "RATING";
+                    const isQuiz = question.assessmentMode === "QUIZ";
                     const average = averageRating(question.options, question.counts, question.total);
+                    const correctRate = question.total ? Math.round(((question.correctCount ?? 0) / question.total) * 100) : 0;
                     return <article className="question-result-card" key={question.nodeId}>
-                      <div className="question-result-heading"><span>{questionIndex + 1}</span><div><small>{isRating ? "SKALA" : "SINGLE CHOICE"}</small><h3>{question.question}</h3></div><strong>{isRating ? `Ø ${average.toFixed(1)}` : `${question.total} Antworten`}</strong></div>
+                      <div className="question-result-heading"><span>{questionIndex + 1}</span><div><small>{isRating ? "SKALA" : isQuiz ? "SINGLE CHOICE QUIZ" : "SINGLE CHOICE"}</small><h3>{question.question}</h3></div><strong>{isRating ? `Ø ${average.toFixed(1)}` : isQuiz ? `${correctRate}% richtig` : `${question.total} Antworten`}</strong></div>
                       {isRating && <div className="result-rating-summary"><strong>{average.toFixed(1)}</strong><span>Durchschnitt aus {question.total} Bewertungen</span><small>{question.minLabel} · {question.min}–{question.max} · {question.maxLabel}</small></div>}
+                      {isQuiz && <div className="result-quiz-summary"><CheckCircle2 size={22} /><div><strong>{question.correctCount ?? 0} von {question.total} richtig</strong><span>Richtige Antwort: {question.options[question.correctOptionIndex ?? 0]}</span></div><b>{correctRate}%</b></div>}
                       <div className="question-result-bars">
                         {question.options.map((option, index) => {
                           const count = question.counts[index] ?? 0;
                           const percentage = question.total ? Math.round((count / question.total) * 100) : 0;
-                          return <div key={`${index}-${option}`}><span>{isRating ? option : String.fromCharCode(65 + index)}</span><section><div><strong>{isRating ? `${option} Punkte` : option}</strong><small>{count} · {percentage}%</small></div><i><b style={{ width: `${percentage}%` }} /></i></section></div>;
+                          return <div className={isQuiz && question.correctOptionIndex === index ? "correct" : ""} key={`${index}-${option}`}><span>{isRating ? option : String.fromCharCode(65 + index)}</span><section><div><strong>{isRating ? `${option} Punkte` : option}{isQuiz && question.correctOptionIndex === index && <CheckCircle2 size={14} />}</strong><small>{count} · {percentage}%</small></div><i><b style={{ width: `${percentage}%` }} /></i></section></div>;
                         })}
                       </div>
                     </article>;

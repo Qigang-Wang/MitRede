@@ -5,6 +5,7 @@ import {
   Cloud,
   Copy,
   FileText,
+  EyeOff,
   Gauge,
   GripVertical,
   ListChecks,
@@ -15,6 +16,7 @@ import {
   Save,
   ScanEye,
   Trash2,
+  Trophy,
   Vote,
   X,
 } from "lucide-react";
@@ -41,6 +43,9 @@ function NodeThumb({ node }: { node: PresentationNode }) {
   if (node.type === "RATING") {
     return <div className="poll-thumb rating-thumb"><Gauge size={24} /><strong>{node.config.question || "Neue Skalenfrage"}</strong><span>{node.config.min ?? 1}–{node.config.max ?? 5} Skala</span></div>;
   }
+  if (node.config.assessmentMode === "QUIZ") {
+    return <div className="poll-thumb quiz-thumb"><Trophy size={24} /><strong>{node.config.question || "Neue Quizfrage"}</strong><span>{node.config.options?.length ?? 0} Antworten</span></div>;
+  }
   return <div className="poll-thumb"><Vote size={24} /><strong>{node.config.question || "Neue Frage"}</strong><span>{node.config.options?.length ?? 0} Optionen</span></div>;
 }
 
@@ -48,17 +53,22 @@ function ResultDisplaySetting({ value, onChange }: { value: "MANUAL" | "LIVE"; o
   return <div className="result-display-setting"><div><strong>Ergebnisanzeige</strong><small>Wann sollen Stimmen auf der Leinwand erscheinen?</small></div><div className="result-display-options"><button className={value === "MANUAL" ? "active" : ""} onClick={() => onChange("MANUAL")}><strong>Am Ende</strong><span>Manuell veröffentlichen</span></button><button className={value === "LIVE" ? "active" : ""} onClick={() => onChange("LIVE")}><strong>Live</strong><span>Nach jeder Antwort</span></button></div><p>Die Antworten werden in beiden Modi sofort gespeichert.</p></div>;
 }
 
-function InteractionPicker({ onClose, onChoose }: { onClose: () => void; onChoose: (type: "MULTIPLE_CHOICE" | "RATING") => void }) {
+function InteractionPicker({ onClose, onChoose }: { onClose: () => void; onChoose: (type: "MULTIPLE_CHOICE" | "RATING" | "QUIZ") => void }) {
   return (
     <div className="interaction-picker-backdrop" onMouseDown={onClose}>
       <section className="interaction-picker" role="dialog" aria-modal="true" aria-labelledby="interaction-picker-title" onMouseDown={(event) => event.stopPropagation()}>
-        <header><div><p className="eyebrow">INTERAKTION EINFÜGEN</p><h2 id="interaction-picker-title">Fragetyp auswählen</h2><p>Die Interaktion wird an der gewählten Stelle eingefügt.</p></div><button onClick={onClose} aria-label="Schließen"><X size={19} /></button></header>
-        <div className="interaction-type-grid">
-          <button onClick={() => onChoose("MULTIPLE_CHOICE")}><span><ListChecks size={24} /></span><strong>Single Choice</strong><small>Eine Antwort aus mehreren Optionen</small></button>
+        <header><div><p className="eyebrow">INTERAKTION EINFÜGEN</p><h2 id="interaction-picker-title">Interaktion auswählen</h2><p>Wählen Sie zwischen Meinungsabfrage und Wissensfrage.</p></div><button onClick={onClose} aria-label="Schließen"><X size={19} /></button></header>
+        <div className="interaction-category"><div className="interaction-category-heading"><span>MEINUNGEN &amp; FEEDBACK</span><small>Ohne richtige oder falsche Antwort</small></div><div className="interaction-type-grid feedback">
+          <button onClick={() => onChoose("MULTIPLE_CHOICE")}><span><ListChecks size={24} /></span><strong>Single Choice</strong><small>Eine Meinung aus mehreren Optionen</small></button>
           <button onClick={() => onChoose("RATING")}><span><Gauge size={24} /></span><strong>Skala</strong><small>Bewertung auf einer Zahlen-Skala</small></button>
-          <button disabled><span><Cloud size={24} /></span><strong>Wortwolke</strong><small>Folgt in einer nächsten Version</small><i>DEMNÄCHST</i></button>
-          <button disabled><span><MessageSquareText size={24} /></span><strong>Offene Frage</strong><small>Folgt in einer nächsten Version</small><i>DEMNÄCHST</i></button>
-        </div>
+          <button disabled><span><Cloud size={24} /></span><strong>Wortwolke</strong><small>Freie Begriffe gemeinsam sammeln</small><i>DEMNÄCHST</i></button>
+          <button disabled><span><MessageSquareText size={24} /></span><strong>Offene Frage</strong><small>Antworten in eigenen Worten</small><i>DEMNÄCHST</i></button>
+        </div></div>
+        <div className="interaction-category quiz"><div className="interaction-category-heading"><span>QUIZ &amp; WISSEN</span><small>Mit Auswertung als richtig oder falsch</small></div><div className="interaction-type-grid quiz">
+          <button onClick={() => onChoose("QUIZ")}><span><Trophy size={24} /></span><strong>Single Choice Quiz</strong><small>Eine richtige Antwort festlegen</small></button>
+          <button disabled><span><ListChecks size={24} /></span><strong>Multiple Choice Quiz</strong><small>Mehrere richtige Antworten</small><i>DEMNÄCHST</i></button>
+          <button disabled><span><Check size={24} /></span><strong>Richtig / Falsch</strong><small>Schnelle Wissensprüfung</small><i>DEMNÄCHST</i></button>
+        </div></div>
       </section>
     </div>
   );
@@ -73,6 +83,8 @@ export default function EditorView() {
   const [question, setQuestion] = useState("");
   const [options, setOptions] = useState<string[]>([]);
   const [resultDisplayMode, setResultDisplayMode] = useState<"MANUAL" | "LIVE">("MANUAL");
+  const [assessmentMode, setAssessmentMode] = useState<"FEEDBACK" | "QUIZ">("FEEDBACK");
+  const [correctOptionIndex, setCorrectOptionIndex] = useState(0);
   const [ratingMin, setRatingMin] = useState(1);
   const [ratingMax, setRatingMax] = useState(5);
   const [ratingMinLabel, setRatingMinLabel] = useState("Sehr niedrig");
@@ -107,6 +119,8 @@ export default function EditorView() {
     setQuestion(selected.config.question ?? "");
     setOptions(selected.config.options ?? []);
     setResultDisplayMode(selected.config.resultDisplayMode ?? "MANUAL");
+    setAssessmentMode(selected.config.assessmentMode ?? "FEEDBACK");
+    setCorrectOptionIndex(selected.config.correctOptionIndex ?? 0);
     if (selected.type === "RATING") {
       setRatingMin(selected.config.min ?? 1);
       setRatingMax(selected.config.max ?? 5);
@@ -127,7 +141,7 @@ export default function EditorView() {
       try {
         const updated = selected.type === "RATING"
           ? await api.updateRating(presentationId, selected.id, { question: question.trim(), min: ratingMin, max: ratingMax, minLabel: ratingMinLabel.trim(), maxLabel: ratingMaxLabel.trim(), resultDisplayMode })
-          : await api.updatePoll(presentationId, selected.id, question.trim(), options.map((option) => option.trim()).filter(Boolean), resultDisplayMode);
+          : await api.updatePoll(presentationId, selected.id, question.trim(), options.map((option) => option.trim()).filter(Boolean), resultDisplayMode, assessmentMode, correctOptionIndex);
         setPresentation((current) => current ? { ...current, nodes: current.nodes.map((node) => node.id === updated.id ? updated : node) } : current);
         setDirty(false);
         setSaveState("saved");
@@ -136,12 +150,12 @@ export default function EditorView() {
       }
     }, 700);
     return () => window.clearTimeout(timer);
-  }, [dirty, options, presentationId, question, ratingMax, ratingMaxLabel, ratingMin, ratingMinLabel, resultDisplayMode, selected]);
+  }, [assessmentMode, correctOptionIndex, dirty, options, presentationId, question, ratingMax, ratingMaxLabel, ratingMin, ratingMinLabel, resultDisplayMode, selected]);
 
-  async function insertAfter(index: number, type: "MULTIPLE_CHOICE" | "RATING") {
+  async function insertAfter(index: number, type: "MULTIPLE_CHOICE" | "RATING" | "QUIZ") {
     if (!presentation) return;
     try {
-      const created = type === "RATING" ? await api.addRating(presentationId) : await api.addPoll(presentationId);
+      const created = type === "RATING" ? await api.addRating(presentationId) : type === "QUIZ" ? await api.addQuiz(presentationId) : await api.addPoll(presentationId);
       const ids = presentation.nodes.map((node) => node.id);
       ids.splice(index + 1, 0, created.id);
       const reordered = await api.reorderNodes(presentationId, ids);
@@ -215,7 +229,7 @@ export default function EditorView() {
                 <span className="node-index">{index + 1}</span>
                 {node.type !== "PDF_PAGE" && <GripVertical className="drag-handle" size={15} />}
                 <NodeThumb node={node} />
-                <span className={node.type === "PDF_PAGE" ? "node-kind pdf" : node.type === "RATING" ? "node-kind rating" : "node-kind poll"}>{node.type === "PDF_PAGE" ? `PDF ${node.sourcePageNumber}` : node.type === "RATING" ? "SKALA" : "UMFRAGE"}</span>
+                <span className={node.type === "PDF_PAGE" ? "node-kind pdf" : node.type === "RATING" ? "node-kind rating" : node.config.assessmentMode === "QUIZ" ? "node-kind quiz" : "node-kind poll"}>{node.type === "PDF_PAGE" ? `PDF ${node.sourcePageNumber}` : node.type === "RATING" ? "SKALA" : node.config.assessmentMode === "QUIZ" ? "QUIZ" : "UMFRAGE"}</span>
               </button>
               <button className="insert-between" onClick={() => setInsertMenuIndex(index)} aria-label={`Interaktion nach Seite ${index + 1} einfügen`}><Plus size={13} /></button>
             </div>
@@ -229,12 +243,12 @@ export default function EditorView() {
         ) : selected?.type === "RATING" ? (
           <div className="poll-canvas rating-canvas"><p className="stage-kicker">LIVE-SKALA</p><h1>{question || "Neue Skalenfrage"}</h1><p>Wählen Sie eine Bewertung</p><div className="canvas-rating-scale">{Array.from({ length: ratingMax - ratingMin + 1 }, (_, index) => <span key={index}>{ratingMin + index}</span>)}</div><div className="canvas-rating-labels"><span>{ratingMinLabel}</span><span>{ratingMaxLabel}</span></div></div>
         ) : selected ? (
-          <div className="poll-canvas"><p className="stage-kicker">LIVE-UMFRAGE</p><h1>{question || "Neue Frage"}</h1><p>Eine Antwort auswählen</p><div className="canvas-options">{options.map((option, index) => <div key={`${index}-${option}`}><span>{String.fromCharCode(65 + index)}</span>{option || `Option ${index + 1}`}</div>)}</div></div>
+          <div className={assessmentMode === "QUIZ" ? "poll-canvas quiz-canvas" : "poll-canvas"}><p className="stage-kicker">{assessmentMode === "QUIZ" ? "WISSENSFRAGE" : "LIVE-UMFRAGE"}</p><h1>{question || "Neue Frage"}</h1><p>Eine Antwort auswählen</p><div className="canvas-options">{options.map((option, index) => <div className={assessmentMode === "QUIZ" && correctOptionIndex === index ? "correct" : ""} key={`${index}-${option}`}><span>{String.fromCharCode(65 + index)}</span>{option || `Option ${index + 1}`}{assessmentMode === "QUIZ" && correctOptionIndex === index && <Check size={16} />}</div>)}</div></div>
         ) : <div className="empty-canvas"><FileText size={34} /><p>Wählen Sie eine Seite aus.</p></div>}
       </main>
 
       <aside className="properties-panel">
-        <div className="panel-heading"><span>EIGENSCHAFTEN</span><strong>{selected?.type === "PDF_PAGE" ? "PDF-Seite" : selected?.type === "RATING" ? "Skala" : "Single Choice"}</strong></div>
+        <div className="panel-heading"><span>EIGENSCHAFTEN</span><strong>{selected?.type === "PDF_PAGE" ? "PDF-Seite" : selected?.type === "RATING" ? "Skala" : assessmentMode === "QUIZ" ? "Single Choice Quiz" : "Single Choice"}</strong></div>
         {selected?.type === "PDF_PAGE" ? (
           <div className="pdf-properties"><FileText size={28} /><h3>Seite {selected.sourcePageNumber}</h3><p>{selected.config.originalName}</p><dl><div><dt>Typ</dt><dd>PDF</dd></div><div><dt>Position</dt><dd>{selected.position + 1}</dd></div></dl><p className="property-hint">PDF-Seiten bleiben in ihrer ursprünglichen Reihenfolge. Interaktionen können dazwischen verschoben werden.</p></div>
         ) : selected?.type === "RATING" ? (
@@ -249,10 +263,11 @@ export default function EditorView() {
         ) : selected ? (
           <div className="poll-properties">
             <label>Frage<textarea value={question} onChange={(event) => { setQuestion(event.target.value); setDirty(true); }} rows={4} /></label>
-            <div className="option-heading"><span>Antwortoptionen</span><small>{options.length} / 8</small></div>
-            {options.map((option, index) => <div className="option-input" key={index}><span>{String.fromCharCode(65 + index)}</span><input value={option} onChange={(event) => { setOptions((current) => current.map((value, optionIndex) => optionIndex === index ? event.target.value : value)); setDirty(true); }} /><button disabled={options.length <= 2} onClick={() => { setOptions((current) => current.filter((_, optionIndex) => optionIndex !== index)); setDirty(true); }} aria-label="Option entfernen"><Trash2 size={15} /></button></div>)}
+            <div className="option-heading"><span>{assessmentMode === "QUIZ" ? "Antworten · richtige markieren" : "Antwortoptionen"}</span><small>{options.length} / 8</small></div>
+            {assessmentMode === "QUIZ" && <p className="quiz-property-hint"><Trophy size={15} /> Wählen Sie genau eine richtige Antwort. Sie wird Teilnehmenden erst mit den Ergebnissen gezeigt.</p>}
+            {options.map((option, index) => <div className={assessmentMode === "QUIZ" ? "option-input quiz" : "option-input"} key={index}><span>{String.fromCharCode(65 + index)}</span><input value={option} onChange={(event) => { setOptions((current) => current.map((value, optionIndex) => optionIndex === index ? event.target.value : value)); setDirty(true); }} />{assessmentMode === "QUIZ" && <button className={correctOptionIndex === index ? "correct-answer active" : "correct-answer"} onClick={() => { setCorrectOptionIndex(index); setDirty(true); }} aria-label={`${option || `Antwort ${index + 1}`} als richtig markieren`} title="Als richtige Antwort markieren"><Check size={15} /></button>}<button disabled={options.length <= 2} onClick={() => { setOptions((current) => current.filter((_, optionIndex) => optionIndex !== index)); setCorrectOptionIndex((current) => current === index ? 0 : current > index ? current - 1 : current); setDirty(true); }} aria-label="Option entfernen"><Trash2 size={15} /></button></div>)}
             <button className="add-option" disabled={options.length >= 8} onClick={() => { setOptions((current) => [...current, `Option ${current.length + 1}`]); setDirty(true); }}><Plus size={15} /> Option hinzufügen</button>
-            <ResultDisplaySetting value={resultDisplayMode} onChange={(value) => { setResultDisplayMode(value); setDirty(true); }} />
+            {assessmentMode === "QUIZ" ? <div className="quiz-result-note"><EyeOff size={16} /><div><strong>Auflösung am Ende</strong><span>Die richtige Antwort bleibt verborgen, bis Sie die Ergebnisse freigeben.</span></div></div> : <ResultDisplaySetting value={resultDisplayMode} onChange={(value) => { setResultDisplayMode(value); setDirty(true); }} />}
             <div className="property-actions"><button onClick={() => void duplicate()}><Copy size={16} /> Duplizieren</button><button className="danger" onClick={() => void remove()}><Trash2 size={16} /> Löschen</button></div>
           </div>
         ) : null}
