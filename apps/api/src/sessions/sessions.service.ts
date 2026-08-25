@@ -33,6 +33,111 @@ export class SessionsService {
     throw new ConflictException("Raumcode konnte nicht erzeugt werden");
   }
 
+  async list() {
+    const sessions = await this.prisma.liveSession.findMany({
+      orderBy: { startedAt: "desc" },
+      include: {
+        presentation: {
+          select: {
+            id: true,
+            title: true,
+            nodes: { select: { type: true } },
+          },
+        },
+        _count: { select: { participants: true, answers: true } },
+      },
+    });
+
+    return sessions.map((session) => ({
+      id: session.id,
+      roomCode: session.roomCode,
+      status: session.status,
+      startedAt: session.startedAt,
+      endedAt: session.endedAt,
+      presentation: {
+        id: session.presentation.id,
+        title: session.presentation.title,
+      },
+      participantCount: session._count.participants,
+      answerCount: session._count.answers,
+      interactionCount: session.presentation.nodes.filter((node) => node.type !== "PDF_PAGE").length,
+    }));
+  }
+
+  async results(id: string) {
+    const session = await this.prisma.liveSession.findUnique({
+      where: { id },
+      include: {
+        presentation: {
+          include: { nodes: { orderBy: { position: "asc" } } },
+        },
+        answers: {
+          where: { isHidden: false },
+          select: { nodeId: true, value: true },
+        },
+        _count: { select: { participants: true, answers: true } },
+      },
+    });
+    if (!session) throw new NotFoundException("Sitzung nicht gefunden");
+
+    const questions = session.presentation.nodes
+      .filter((node) => node.type !== "PDF_PAGE")
+      .map((node) => {
+        const config = node.config as PollConfig;
+        const answers = session.answers.filter((answer) => answer.nodeId === node.id);
+        const counts = Array.from({ length: config.options?.length ?? 0 }, () => 0);
+        for (const answer of answers) {
+          const value = answer.value as { optionIndex?: number };
+          if (typeof value.optionIndex === "number" && counts[value.optionIndex] !== undefined) {
+            counts[value.optionIndex] = (counts[value.optionIndex] ?? 0) + 1;
+          }
+        }
+        return {
+          nodeId: node.id,
+          position: node.position,
+          type: node.type,
+          question: config.question ?? "Interaktion",
+          options: config.options ?? [],
+          total: answers.length,
+          counts,
+        };
+      });
+
+    return {
+      sessionId: session.id,
+      roomCode: session.roomCode,
+      status: session.status,
+      startedAt: session.startedAt,
+      endedAt: session.endedAt,
+      presentation: {
+        id: session.presentation.id,
+        title: session.presentation.title,
+      },
+      participantCount: session._count.participants,
+      answerCount: session._count.answers,
+      questions,
+    };
+  }
+
+  async end(id: string) {
+    const existing = await this.prisma.liveSession.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException("Sitzung nicht gefunden");
+    if (existing.status !== "ENDED") {
+      const session = await this.prisma.liveSession.update({
+        where: { id },
+        data: {
+          status: "ENDED",
+          interactionStatus: "LOCKED",
+          resultsVisible: true,
+          endedAt: new Date(),
+          stateVersion: { increment: 1 },
+        },
+      });
+      this.broadcast(session.id, session.stateVersion, "session.ended");
+    }
+    return this.results(id);
+  }
+
   async create(presentationId: string) {
     const presentation = await this.prisma.presentation.findUnique({
       where: { id: presentationId },

@@ -52,6 +52,40 @@ export type SessionSnapshot = {
   results: { total: number; counts: number[] };
 };
 
+export type SessionHistoryItem = {
+  id: string;
+  roomCode: string;
+  status: string;
+  startedAt: string | null;
+  endedAt: string | null;
+  presentation: { id: string; title: string };
+  participantCount: number;
+  answerCount: number;
+  interactionCount: number;
+};
+
+export type SessionQuestionResult = {
+  nodeId: string;
+  position: number;
+  type: PresentationNode["type"];
+  question: string;
+  options: string[];
+  total: number;
+  counts: number[];
+};
+
+export type SessionResults = {
+  sessionId: string;
+  roomCode: string;
+  status: string;
+  startedAt: string | null;
+  endedAt: string | null;
+  presentation: { id: string; title: string };
+  participantCount: number;
+  answerCount: number;
+  questions: SessionQuestionResult[];
+};
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, init);
   if (!response.ok) {
@@ -73,6 +107,9 @@ export const api = {
   },
   startSession: (presentationId: string) =>
     request<SessionSnapshot>(`/presentations/${presentationId}/sessions`, { method: "POST" }),
+  sessionHistory: () => request<SessionHistoryItem[]>("/sessions"),
+  sessionResults: (sessionId: string) => request<SessionResults>(`/sessions/${sessionId}/results`),
+  endSession: (sessionId: string) => request<SessionResults>(`/sessions/${sessionId}/end`, { method: "POST" }),
   sessionSnapshot: (sessionId: string) =>
     request<SessionSnapshot>(`/sessions/${sessionId}/snapshot`),
   roomSnapshot: (roomCode: string) =>

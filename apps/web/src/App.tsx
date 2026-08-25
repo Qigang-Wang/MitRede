@@ -33,12 +33,14 @@ import {
 } from "./api";
 import EditorView from "./EditorView";
 import PreviewView from "./PreviewView";
+import ResultsView from "./ResultsView";
 import { PdfPageCanvas } from "./PdfPage";
 
-type Route = "dashboard" | "editor" | "preview" | "present" | "join";
+type Route = "dashboard" | "editor" | "results" | "preview" | "present" | "join";
 
 function currentRoute(): Route {
   if (/^\/app\/presentations\/[^/]+\/edit/.test(window.location.pathname)) return "editor";
+  if (window.location.pathname.startsWith("/app/results")) return "results";
   if (window.location.pathname.startsWith("/preview/")) return "preview";
   if (window.location.pathname.startsWith("/present/")) return "present";
   if (window.location.pathname.startsWith("/join/")) return "join";
@@ -157,8 +159,8 @@ function Dashboard() {
         <nav className="main-nav" aria-label="Hauptnavigation">
           <a className="nav-item active" href="/app"><LayoutDashboard size={18} /> Übersicht</a>
           <a className="nav-item" href="#presentations"><Presentation size={18} /> Präsentationen</a>
-          <a className="nav-item" href="#sessions"><Radio size={18} /> Live-Sitzungen</a>
-          <a className="nav-item" href="#results"><BarChart3 size={18} /> Ergebnisse</a>
+          <a className="nav-item" href="/app/results?filter=live"><Radio size={18} /> Live-Sitzungen</a>
+          <a className="nav-item" href="/app/results"><BarChart3 size={18} /> Ergebnisse</a>
         </nav>
         <div className="sidebar-foot">
           <a className="nav-item" href="#help"><CircleHelp size={18} /> Hilfe</a>
@@ -230,6 +232,16 @@ function PresenterView() {
     catch (caught) { setError(caught instanceof Error ? caught.message : "Status konnte nicht geändert werden"); }
   }
 
+  async function endSession() {
+    if (!window.confirm("Präsentation beenden und Ergebnisse speichern?")) return;
+    try {
+      await api.endSession(sessionId);
+      navigate(`/app/results/${sessionId}`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Sitzung konnte nicht beendet werden");
+    }
+  }
+
   if (!snapshot) return <LoadingScreen message={error || "Live-Sitzung wird geladen…"} />;
   const poll = snapshot.currentNode?.config;
   const total = snapshot.results.total;
@@ -244,7 +256,7 @@ function PresenterView() {
 
   return (
     <div className="presenter-shell">
-      <header className="presenter-topbar"><button className="icon-button dark" onClick={() => navigate("/app")} aria-label="Zurück"><X size={21} /></button><div><strong>{snapshot.presentation.title}</strong><span className="live-badge"><i /> LIVE</span></div><div className="presenter-meta"><Users size={18} /> {total} Antworten <button className="room-code" onClick={() => navigate(`/join/${snapshot.roomCode}`)} title="Teilnahmeansicht öffnen"><QrCode size={18} /> {snapshot.roomCode.slice(0, 3)} {snapshot.roomCode.slice(3)}</button></div></header>
+      <header className="presenter-topbar"><button className="icon-button dark" onClick={() => void endSession()} aria-label="Präsentation beenden" title="Präsentation beenden"><X size={21} /></button><div><strong>{snapshot.presentation.title}</strong><span className="live-badge"><i /> LIVE</span></div><div className="presenter-meta"><Users size={18} /> {total} Antworten <button className="room-code" onClick={() => navigate(`/join/${snapshot.roomCode}`)} title="Teilnahmeansicht öffnen"><QrCode size={18} /> {snapshot.roomCode.slice(0, 3)} {snapshot.roomCode.slice(3)}</button></div></header>
       <main className="stage-wrap">{isPdf && poll?.objectKey && poll.pageNumber ? <div className="presented-pdf"><PdfPageCanvas objectKey={poll.objectKey} pageNumber={poll.pageNumber} /></div> : <div className="stage"><p className="stage-kicker">LIVE-UMFRAGE</p><h1>{poll?.question ?? "Keine aktuelle Frage"}</h1><p className="stage-subtitle">Eine Antwort auswählen</p>{snapshot.resultsVisible ? <div className="result-list">{(poll?.options ?? []).map((label, index) => { const count = snapshot.results.counts[index] ?? 0; const percentage = total ? Math.round(count / total * 100) : 0; return <div className="result-row" key={label}><span className="result-letter">{String.fromCharCode(65 + index)}</span><div><div className="result-label"><strong>{label}</strong><span>{count} Stimmen · {percentage}%</span></div><div className="result-track"><span style={{ width: `${percentage}%` }} /></div></div></div>; })}</div> : <div className="results-hidden"><BarChart3 size={34} /><strong>Ergebnisse verborgen</strong><span>Die Stimmen werden weiterhin gesammelt.</span></div>}<p className="answer-count"><Check size={16} /> {total} Antworten eingegangen</p></div>}</main>
       <footer className="presenter-controls"><div className="page-controls"><button disabled={currentIndex <= 0} onClick={() => move(-1)}><ArrowLeft size={19} /></button><span>{currentIndex + 1} / {timeline.length}</span><button disabled={currentIndex < 0 || currentIndex >= timeline.length - 1} onClick={() => move(1)}><ArrowRight size={19} /></button></div><div className="moderation-controls">{isPdf ? <span className="pdf-live-label"><FileText size={17} /> PDF-Seite {snapshot.currentNode?.sourcePageNumber}</span> : <><button className={snapshot.interactionStatus === "ACCEPTING" ? "control active" : "control"} onClick={() => void update({ interactionStatus: snapshot.interactionStatus === "ACCEPTING" ? "LOCKED" : "ACCEPTING" })}>{snapshot.interactionStatus === "ACCEPTING" ? <Radio size={18} /> : <Lock size={18} />}{snapshot.interactionStatus === "ACCEPTING" ? "Antworten offen" : "Antworten gesperrt"}</button><button className={snapshot.resultsVisible ? "control active" : "control"} onClick={() => void update({ resultsVisible: !snapshot.resultsVisible })}><BarChart3 size={18} /> {snapshot.resultsVisible ? "Ergebnisse sichtbar" : "Ergebnisse verborgen"}</button></>}</div><button className="control" onClick={() => document.documentElement.requestFullscreen?.()}><Fullscreen size={18} /></button></footer>
     </div>
@@ -305,6 +317,7 @@ export default function App() {
   const [route, setRoute] = useState<Route>(currentRoute);
   useEffect(() => { const updateRoute = () => setRoute(currentRoute()); window.addEventListener("popstate", updateRoute); return () => window.removeEventListener("popstate", updateRoute); }, []);
   if (route === "editor") return <EditorView />;
+  if (route === "results") return <ResultsView />;
   if (route === "preview") return <PreviewView />;
   if (route === "present") return <PresenterView />;
   if (route === "join") return <JoinView />;

@@ -9,6 +9,12 @@ import { SessionsService } from "./sessions.service";
 export class SessionsController {
   constructor(private readonly sessions: SessionsService) {}
 
+  @Get("sessions")
+  @ApiOperation({ summary: "Listet frühere und laufende Sitzungen" })
+  list() {
+    return this.sessions.list();
+  }
+
   @Post("presentations/:presentationId/sessions")
   @ApiOperation({ summary: "Startet eine neue Live-Sitzung" })
   create(@Param("presentationId") presentationId: string) {
@@ -19,6 +25,18 @@ export class SessionsController {
   @ApiOperation({ summary: "Lädt den aktuellen Sitzungsstand für Moderierende" })
   snapshot(@Param("id") id: string) {
     return this.sessions.snapshotById(id);
+  }
+
+  @Get("sessions/:id/results")
+  @ApiOperation({ summary: "Lädt die vollständige Auswertung einer Sitzung" })
+  results(@Param("id") id: string) {
+    return this.sessions.results(id);
+  }
+
+  @Post("sessions/:id/end")
+  @ApiOperation({ summary: "Beendet eine Live-Sitzung und fixiert ihre Auswertung" })
+  end(@Param("id") id: string) {
+    return this.sessions.end(id);
   }
 
   @Get("rooms/:roomCode/snapshot")
@@ -39,4 +57,3 @@ export class SessionsController {
     return this.sessions.update(id, body);
   }
 }
-
