@@ -40,7 +40,7 @@ import {
 import EditorView from "./EditorView";
 import PreviewView from "./PreviewView";
 import ResultsView from "./ResultsView";
-import { PdfPageCanvas } from "./PdfPage";
+import { PdfPageCanvas, usePdfPageAspectRatio } from "./PdfPage";
 
 type Route = "dashboard" | "editor" | "results" | "preview" | "present" | "join";
 
@@ -236,6 +236,7 @@ function PresenterView() {
   const [blackout, setBlackout] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(false);
   const [cursorVisible, setCursorVisible] = useState(true);
+  const [viewportSize, setViewportSize] = useState(() => ({ width: window.innerWidth, height: window.innerHeight }));
   const [fullscreenRequired, setFullscreenRequired] = useState(false);
   const fullscreenAttempted = useRef(false);
   const cursorTimer = useRef<number | null>(null);
@@ -277,6 +278,10 @@ function PresenterView() {
 
   const timeline = snapshot?.timeline ?? [];
   const currentIndex = timeline.findIndex((node) => node.id === snapshot?.currentNode?.id);
+  const referencePdf = timeline.find((node) => node.type === "PDF_PAGE" && node.config.objectKey && node.config.pageNumber);
+  const slideAspectRatio = usePdfPageAspectRatio(referencePdf?.config.objectKey, referencePdf?.config.pageNumber);
+  const slideWidth = Math.min(viewportSize.width, viewportSize.height * slideAspectRatio);
+  const slideHeight = slideWidth / slideAspectRatio;
 
   const move = useCallback((offset: number) => {
     if (!snapshot) return;
@@ -306,6 +311,16 @@ function PresenterView() {
   }, [registerPointerActivity]);
 
   useEffect(() => {
+    const updateViewportSize = () => setViewportSize({ width: window.innerWidth, height: window.innerHeight });
+    window.addEventListener("resize", updateViewportSize);
+    document.addEventListener("fullscreenchange", updateViewportSize);
+    return () => {
+      window.removeEventListener("resize", updateViewportSize);
+      document.removeEventListener("fullscreenchange", updateViewportSize);
+    };
+  }, []);
+
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.target instanceof HTMLElement && event.target.closest("button, input, textarea, select, a")) return;
       const key = event.key.toLowerCase();
@@ -332,8 +347,8 @@ function PresenterView() {
 
   return (
     <div className={["projection-shell", controlsVisible || consoleOpen ? "controls-visible" : "controls-hidden", cursorVisible ? "" : "cursor-hidden", laserEnabled ? "laser-active" : ""].filter(Boolean).join(" ")} onMouseMove={(event) => { registerPointerActivity(); if (laserEnabled) setLaserPoint({ x: event.clientX, y: event.clientY }); }}>
-      <main className={isPdf ? "projection-stage pdf" : "projection-stage"} onClick={() => { if (!laserEnabled && !blackout && !consoleOpen) move(1); }}>
-        {isPdf && poll?.objectKey && poll.pageNumber ? <div className="presented-pdf projection-pdf"><PdfPageCanvas objectKey={poll.objectKey} pageNumber={poll.pageNumber} fitContainer /></div> : <div className="stage projection-poll"><p className="stage-kicker">{isRating ? "LIVE-SKALA" : isQuiz ? "WISSENSFRAGE" : "LIVE-UMFRAGE"}</p><h1>{poll?.question ?? "Keine aktuelle Frage"}</h1><p className="stage-subtitle">{isRating ? "Wählen Sie eine Bewertung" : "Eine Antwort auswählen"}</p>{snapshot.resultsVisible ? <SessionResultDisplay options={poll?.options ?? []} counts={snapshot.results.counts} total={total} rating={isRating} correctOptionIndex={isQuiz ? poll?.correctOptionIndex : undefined} /> : <div className="results-hidden"><BarChart3 size={34} /><strong>Antworten werden gesammelt</strong><span>Die Ergebnisse erscheinen nach der Freigabe.</span></div>}<p className="answer-count"><Check size={16} /> {total} Antworten eingegangen</p></div>}
+      <main className="projection-stage" onClick={() => { if (!laserEnabled && !blackout && !consoleOpen) move(1); }}>
+        {isPdf && poll?.objectKey && poll.pageNumber ? <div className="presented-pdf projection-pdf"><PdfPageCanvas objectKey={poll.objectKey} pageNumber={poll.pageNumber} fitContainer /></div> : <div className="stage projection-poll" style={{ width: slideWidth, height: slideHeight }}><p className="stage-kicker">{isRating ? "LIVE-SKALA" : isQuiz ? "WISSENSFRAGE" : "LIVE-UMFRAGE"}</p><h1>{poll?.question ?? "Keine aktuelle Frage"}</h1><p className="stage-subtitle">{isRating ? "Wählen Sie eine Bewertung" : "Eine Antwort auswählen"}</p>{snapshot.resultsVisible ? <SessionResultDisplay options={poll?.options ?? []} counts={snapshot.results.counts} total={total} rating={isRating} correctOptionIndex={isQuiz ? poll?.correctOptionIndex : undefined} /> : <div className="results-hidden"><BarChart3 size={34} /><strong>Antworten werden gesammelt</strong><span>Die Ergebnisse erscheinen nach der Freigabe.</span></div>}<p className="answer-count"><Check size={16} /> {total} Antworten eingegangen</p></div>}
       </main>
       {roomVisible && !blackout && <aside className="projection-room"><QrCode size={23} /><span>TEILNEHMEN</span><strong>{snapshot.roomCode.slice(0, 3)} {snapshot.roomCode.slice(3)}</strong><small>{joinUrl}</small></aside>}
       {blackout && <div className="projection-blackout" aria-label="Schwarzer Bildschirm" />}

@@ -16,6 +16,26 @@ function loadDocument(url: string) {
   return loading;
 }
 
+export function usePdfPageAspectRatio(objectKey?: string, pageNumber?: number) {
+  const [aspectRatio, setAspectRatio] = useState(16 / 9);
+
+  useEffect(() => {
+    if (!objectKey || !pageNumber) return;
+    let cancelled = false;
+    void loadDocument(pdfAssetUrl(objectKey))
+      .then((document) => document.getPage(pageNumber))
+      .then((page) => {
+        if (cancelled) return;
+        const viewport = page.getViewport({ scale: 1 });
+        if (viewport.width > 0 && viewport.height > 0) setAspectRatio(viewport.width / viewport.height);
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [objectKey, pageNumber]);
+
+  return aspectRatio;
+}
+
 export function PdfPageCanvas({
   objectKey,
   pageNumber,
