@@ -235,8 +235,10 @@ function PresenterView() {
   const [roomVisible, setRoomVisible] = useState(true);
   const [blackout, setBlackout] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(false);
+  const [cursorVisible, setCursorVisible] = useState(true);
   const [fullscreenRequired, setFullscreenRequired] = useState(false);
   const fullscreenAttempted = useRef(false);
+  const cursorTimer = useRef<number | null>(null);
 
   const load = useCallback(async () => {
     if (sessionId === "starting") return;
@@ -290,6 +292,19 @@ function PresenterView() {
     void document.documentElement.requestFullscreen?.().then(() => setFullscreenRequired(false)).catch(() => setFullscreenRequired(true));
   }, []);
 
+  const registerPointerActivity = useCallback(() => {
+    setCursorVisible(true);
+    if (cursorTimer.current !== null) window.clearTimeout(cursorTimer.current);
+    cursorTimer.current = window.setTimeout(() => setCursorVisible(false), 3000);
+  }, []);
+
+  useEffect(() => {
+    registerPointerActivity();
+    return () => {
+      if (cursorTimer.current !== null) window.clearTimeout(cursorTimer.current);
+    };
+  }, [registerPointerActivity]);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.target instanceof HTMLElement && event.target.closest("button, input, textarea, select, a")) return;
@@ -316,7 +331,7 @@ function PresenterView() {
   const joinUrl = `${window.location.origin}/join/${snapshot.roomCode}`;
 
   return (
-    <div className={["projection-shell", controlsVisible || consoleOpen ? "controls-visible" : "controls-hidden", laserEnabled ? "laser-active" : ""].filter(Boolean).join(" ")} onMouseMove={(event) => { if (laserEnabled) setLaserPoint({ x: event.clientX, y: event.clientY }); }}>
+    <div className={["projection-shell", controlsVisible || consoleOpen ? "controls-visible" : "controls-hidden", cursorVisible ? "" : "cursor-hidden", laserEnabled ? "laser-active" : ""].filter(Boolean).join(" ")} onMouseMove={(event) => { registerPointerActivity(); if (laserEnabled) setLaserPoint({ x: event.clientX, y: event.clientY }); }}>
       <main className="projection-stage" onClick={() => { if (!laserEnabled && !blackout && !consoleOpen) move(1); }}>
         {isPdf && poll?.objectKey && poll.pageNumber ? <div className="presented-pdf projection-pdf"><PdfPageCanvas objectKey={poll.objectKey} pageNumber={poll.pageNumber} fitContainer /></div> : <div className="stage projection-poll"><p className="stage-kicker">{isRating ? "LIVE-SKALA" : isQuiz ? "WISSENSFRAGE" : "LIVE-UMFRAGE"}</p><h1>{poll?.question ?? "Keine aktuelle Frage"}</h1><p className="stage-subtitle">{isRating ? "Wählen Sie eine Bewertung" : "Eine Antwort auswählen"}</p>{snapshot.resultsVisible ? <SessionResultDisplay options={poll?.options ?? []} counts={snapshot.results.counts} total={total} rating={isRating} correctOptionIndex={isQuiz ? poll?.correctOptionIndex : undefined} /> : <div className="results-hidden"><BarChart3 size={34} /><strong>Antworten werden gesammelt</strong><span>Die Ergebnisse erscheinen nach der Freigabe.</span></div>}<p className="answer-count"><Check size={16} /> {total} Antworten eingegangen</p></div>}
       </main>
