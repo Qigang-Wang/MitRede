@@ -15,6 +15,7 @@ export type PresentationSummary = {
 };
 
 export type PollConfig = {
+  title?: string;
   question?: string;
   options?: string[];
   maxSelections?: number;
@@ -34,7 +35,7 @@ export type PresentationNode = {
   id: string;
   presentationId?: string;
   position: number;
-  type: "PDF_PAGE" | "MULTIPLE_CHOICE" | "RATING" | "WORD_CLOUD" | "OPEN_QUESTION" | "AI_SUMMARY";
+  type: "PDF_PAGE" | "JOIN_PAGE" | "MULTIPLE_CHOICE" | "RATING" | "WORD_CLOUD" | "OPEN_QUESTION" | "AI_SUMMARY";
   config: PollConfig;
   sourcePageNumber: number | null;
 };
@@ -171,6 +172,8 @@ export const api = {
         resultDisplayMode: "MANUAL",
       }),
     }),
+  addJoinPage: (presentationId: string) =>
+    request<PresentationNode>(`/presentations/${presentationId}/join-pages`, { method: "POST" }),
   updatePoll: (presentationId: string, nodeId: string, question: string, options: string[], resultDisplayMode: "MANUAL" | "LIVE", assessmentMode: "FEEDBACK" | "QUIZ" = "FEEDBACK", correctOptionIndex = 0) =>
     request<PresentationNode>(`/presentations/${presentationId}/nodes/${nodeId}`, {
       method: "PATCH",

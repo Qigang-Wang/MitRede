@@ -16,6 +16,7 @@ export const interactionStatusSchema = z.enum([
 
 export const nodeTypeSchema = z.enum([
   "PDF_PAGE",
+  "JOIN_PAGE",
   "MULTIPLE_CHOICE",
   "RATING",
   "WORD_CLOUD",
@@ -60,4 +61,3 @@ export interface ClientToServerEvents {
     acknowledge: (response: { accepted: boolean }) => void,
   ) => void;
 }
-

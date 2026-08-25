@@ -233,7 +233,7 @@ function PresenterView() {
   const [consoleOpen, setConsoleOpen] = useState(false);
   const [laserEnabled, setLaserEnabled] = useState(false);
   const [laserPoint, setLaserPoint] = useState<{ x: number; y: number } | null>(null);
-  const [joinScreenVisible, setJoinScreenVisible] = useState(true);
+  const [joinScreenVisible, setJoinScreenVisible] = useState(false);
   const [blackout, setBlackout] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(false);
   const [cursorVisible, setCursorVisible] = useState(true);
@@ -241,6 +241,7 @@ function PresenterView() {
   const [fullscreenRequired, setFullscreenRequired] = useState(false);
   const fullscreenAttempted = useRef(false);
   const cursorTimer = useRef<number | null>(null);
+  const joinNodeActive = snapshot?.currentNode?.type === "JOIN_PAGE";
 
   const load = useCallback(async () => {
     if (sessionId === "starting") return;
@@ -325,8 +326,8 @@ function PresenterView() {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.target instanceof HTMLElement && event.target.closest("button, input, textarea, select, a")) return;
       const key = event.key.toLowerCase();
-      if (["arrowright", "pagedown", " "].includes(key)) { event.preventDefault(); if (joinScreenVisible) setJoinScreenVisible(false); else move(1); }
-      if (["arrowleft", "pageup"].includes(key)) { event.preventDefault(); if (joinScreenVisible) setJoinScreenVisible(false); else move(-1); }
+      if (["arrowright", "pagedown", " "].includes(key)) { event.preventDefault(); if (joinScreenVisible && !joinNodeActive) setJoinScreenVisible(false); else move(1); }
+      if (["arrowleft", "pageup"].includes(key)) { event.preventDefault(); if (joinScreenVisible && !joinNodeActive) setJoinScreenVisible(false); else move(-1); }
       if (key === "b") setBlackout((value) => !value);
       if (key === "l") setLaserEnabled((value) => !value);
       if (key === "r") setJoinScreenVisible((value) => !value);
@@ -335,32 +336,36 @@ function PresenterView() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [enterFullscreen, joinScreenVisible, move]);
+  }, [enterFullscreen, joinNodeActive, joinScreenVisible, move]);
+
+  useEffect(() => { setJoinScreenVisible(false); }, [snapshot?.currentNode?.id]);
 
   if (sessionId === "starting") return <div className="projection-starting"><MessageCircleMore size={34} /><strong>MitRede</strong><span>Präsentation wird vorbereitet…</span></div>;
   if (!snapshot) return <LoadingScreen message={error || "Live-Sitzung wird geladen…"} />;
   const poll = snapshot.currentNode?.config;
   const total = snapshot.results.total;
   const isPdf = snapshot.currentNode?.type === "PDF_PAGE";
+  const isJoinPage = snapshot.currentNode?.type === "JOIN_PAGE";
   const isRating = snapshot.currentNode?.type === "RATING";
   const isQuiz = poll?.assessmentMode === "QUIZ";
+  const isInteractive = snapshot.currentNode?.type === "MULTIPLE_CHOICE" || isRating;
   const joinUrl = `${window.location.origin}/join/${snapshot.roomCode}`;
   const roomCode = `${snapshot.roomCode.slice(0, 3)} ${snapshot.roomCode.slice(3)}`;
 
   return (
     <div className={["projection-shell", controlsVisible || consoleOpen ? "controls-visible" : "controls-hidden", cursorVisible ? "" : "cursor-hidden", laserEnabled ? "laser-active" : ""].filter(Boolean).join(" ")} onMouseMove={(event) => { registerPointerActivity(); if (laserEnabled) setLaserPoint({ x: event.clientX, y: event.clientY }); }}>
       <main className="projection-stage" onClick={() => { if (!laserEnabled && !blackout && !consoleOpen) move(1); }}>
-        {isPdf && poll?.objectKey && poll.pageNumber ? <div className="presented-pdf projection-pdf"><PdfPageCanvas objectKey={poll.objectKey} pageNumber={poll.pageNumber} fitContainer /></div> : <div className="stage projection-poll" style={{ width: slideWidth, height: slideHeight }}><p className="stage-kicker">{isRating ? "LIVE-SKALA" : isQuiz ? "WISSENSFRAGE" : "LIVE-UMFRAGE"}</p><h1>{poll?.question ?? "Keine aktuelle Frage"}</h1><p className="stage-subtitle">{isRating ? "Wählen Sie eine Bewertung" : "Eine Antwort auswählen"}</p>{snapshot.resultsVisible ? <SessionResultDisplay options={poll?.options ?? []} counts={snapshot.results.counts} total={total} rating={isRating} correctOptionIndex={isQuiz ? poll?.correctOptionIndex : undefined} /> : <div className="results-hidden"><BarChart3 size={34} /><strong>Antworten werden gesammelt</strong><span>Die Ergebnisse erscheinen nach der Freigabe.</span></div>}<p className="answer-count"><Check size={16} /> {total} Antworten eingegangen</p></div>}
+        {!isJoinPage && (isPdf && poll?.objectKey && poll.pageNumber ? <div className="presented-pdf projection-pdf"><PdfPageCanvas objectKey={poll.objectKey} pageNumber={poll.pageNumber} fitContainer /></div> : <div className="stage projection-poll" style={{ width: slideWidth, height: slideHeight }}><p className="stage-kicker">{isRating ? "LIVE-SKALA" : isQuiz ? "WISSENSFRAGE" : "LIVE-UMFRAGE"}</p><h1>{poll?.question ?? "Keine aktuelle Frage"}</h1><p className="stage-subtitle">{isRating ? "Wählen Sie eine Bewertung" : "Eine Antwort auswählen"}</p>{snapshot.resultsVisible ? <SessionResultDisplay options={poll?.options ?? []} counts={snapshot.results.counts} total={total} rating={isRating} correctOptionIndex={isQuiz ? poll?.correctOptionIndex : undefined} /> : <div className="results-hidden"><BarChart3 size={34} /><strong>Antworten werden gesammelt</strong><span>Die Ergebnisse erscheinen nach der Freigabe.</span></div>}<p className="answer-count"><Check size={16} /> {total} Antworten eingegangen</p></div>)}
       </main>
       {!blackout && <aside className="projection-room"><QrCode size={23} /><span>TEILNEHMEN</span><strong>{roomCode}</strong><small>{joinUrl}</small></aside>}
-      {joinScreenVisible && !blackout && <section className="projection-join-screen" aria-label="Teilnahmeseite" onClick={() => setJoinScreenVisible(false)}>
+      {(isJoinPage || joinScreenVisible) && !blackout && <section className="projection-join-screen" aria-label="Teilnahmeseite" onClick={() => { if (isJoinPage) move(1); else setJoinScreenVisible(false); }}>
         <div className="projection-join-card" onClick={(event) => event.stopPropagation()}>
           <div className="projection-join-intro"><span>MITREDE</span><h1>Jetzt teilnehmen</h1><p>QR-Code scannen oder manuell beitreten.</p></div>
           <div className="projection-join-qr"><QRCodeSVG value={joinUrl} size={280} level="M" marginSize={1} title="QR-Code zur Teilnahme" /></div>
           <div className="projection-join-code"><span>RAUMCODE</span><strong>{roomCode}</strong></div>
           <div className="projection-join-manual"><span>MANUELL</span><ol><li><b>1</b><p><small>Webseite öffnen</small><strong>{window.location.host}</strong></p></li><li><b>2</b><p><small>Raumcode eingeben</small><strong>{roomCode}</strong></p></li><li><b>3</b><p><small>Auswählen</small><strong>Beitreten</strong></p></li></ol></div>
         </div>
-        <button className="projection-join-start" onClick={() => setJoinScreenVisible(false)}>Klicken oder → zum Starten</button>
+        <button className="projection-join-start" onClick={() => { if (isJoinPage) move(1); else setJoinScreenVisible(false); }}>Klicken oder → zum Fortfahren</button>
       </section>}
       {blackout && <div className="projection-blackout" aria-label="Schwarzer Bildschirm" />}
       {laserEnabled && laserPoint && !blackout && <span className="projection-laser" style={{ left: laserPoint.x, top: laserPoint.y }} />}
@@ -370,7 +375,7 @@ function PresenterView() {
           <header><div><span className="live-badge"><i /> LIVE</span><strong>{snapshot.presentation.title}</strong></div><button onClick={() => setConsoleOpen(false)} aria-label="Konsole schließen"><X size={18} /></button></header>
           <div className="projection-console-status"><span>Seite {currentIndex + 1} von {timeline.length}</span><span><Users size={15} /> {total} Antworten</span></div>
           <div className="projection-console-pages"><button disabled={currentIndex <= 0} onClick={() => { setJoinScreenVisible(false); move(-1); }}><ArrowLeft size={18} /> Zurück</button><button disabled={currentIndex >= timeline.length - 1} onClick={() => { setJoinScreenVisible(false); move(1); }}>Weiter <ArrowRight size={18} /></button></div>
-          {!isPdf && <div className="projection-console-interaction"><button className={snapshot.interactionStatus === "ACCEPTING" ? "active" : ""} onClick={() => void update({ interactionStatus: snapshot.interactionStatus === "ACCEPTING" ? "LOCKED" : "ACCEPTING" })}>{snapshot.interactionStatus === "ACCEPTING" ? <Radio size={17} /> : <Lock size={17} />}{snapshot.interactionStatus === "ACCEPTING" ? "Antworten offen" : "Antworten gesperrt"}</button><button className={snapshot.resultsVisible ? "active" : ""} onClick={() => void update({ resultsVisible: !snapshot.resultsVisible })}>{snapshot.resultsVisible ? <Eye size={17} /> : <EyeOff size={17} />}{snapshot.resultsVisible ? "Ergebnisse sichtbar" : "Ergebnisse zeigen"}</button></div>}
+          {isInteractive && <div className="projection-console-interaction"><button className={snapshot.interactionStatus === "ACCEPTING" ? "active" : ""} onClick={() => void update({ interactionStatus: snapshot.interactionStatus === "ACCEPTING" ? "LOCKED" : "ACCEPTING" })}>{snapshot.interactionStatus === "ACCEPTING" ? <Radio size={17} /> : <Lock size={17} />}{snapshot.interactionStatus === "ACCEPTING" ? "Antworten offen" : "Antworten gesperrt"}</button><button className={snapshot.resultsVisible ? "active" : ""} onClick={() => void update({ resultsVisible: !snapshot.resultsVisible })}>{snapshot.resultsVisible ? <Eye size={17} /> : <EyeOff size={17} />}{snapshot.resultsVisible ? "Ergebnisse sichtbar" : "Ergebnisse zeigen"}</button></div>}
           <div className="projection-console-shortcuts"><span>← → Seiten</span><span>L Laser</span><span>B Schwarz</span><span>R Teilnahme</span></div>
           {error && <p>{error}</p>}
           <button className="projection-end" onClick={() => void endSession()}><X size={16} /> Präsentation beenden</button>
@@ -378,7 +383,7 @@ function PresenterView() {
         <nav className="projection-dock" aria-label="Präsentationswerkzeuge" onClick={(event) => event.stopPropagation()}>
           <button className={consoleOpen ? "active" : ""} onClick={() => setConsoleOpen((value) => !value)} title="Konsole (C)"><MonitorCog size={19} /><span>Konsole</span></button>
           <button className={laserEnabled ? "active laser" : ""} onClick={() => setLaserEnabled((value) => !value)} title="Laser (L)"><MousePointer2 size={19} /><span>Laser</span></button>
-          <button className={joinScreenVisible ? "active" : ""} onClick={() => setJoinScreenVisible((value) => !value)} title="Teilnahmeseite (R)"><QrCode size={19} /><span>Raum</span></button>
+          <button className={isJoinPage || joinScreenVisible ? "active" : ""} onClick={() => { if (!isJoinPage) setJoinScreenVisible((value) => !value); }} title="Teilnahmeseite (R)"><QrCode size={19} /><span>Raum</span></button>
           <button className={blackout ? "active" : ""} onClick={() => setBlackout((value) => !value)} title="Schwarzer Bildschirm (B)"><EyeOff size={19} /><span>Schwarz</span></button>
           <button onClick={enterFullscreen} title="Vollbild (F)"><Fullscreen size={19} /><span>Vollbild</span></button>
         </nav>
@@ -431,7 +436,7 @@ function JoinView() {
   if (!snapshot) return <LoadingScreen message={error || "Raum wird geöffnet…"} />;
   const options = snapshot.currentNode?.config.options ?? [];
   const accepting = snapshot.interactionStatus === "ACCEPTING";
-  const waitingForPresentation = snapshot.currentNode?.type === "PDF_PAGE";
+  const waitingForPresentation = snapshot.currentNode?.type === "PDF_PAGE" || snapshot.currentNode?.type === "JOIN_PAGE";
   const isRating = snapshot.currentNode?.type === "RATING";
   const isQuiz = snapshot.currentNode?.config.assessmentMode === "QUIZ";
   const correctOptionIndex = snapshot.currentNode?.config.correctOptionIndex;

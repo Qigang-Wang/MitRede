@@ -69,6 +69,12 @@ export class PresentationsController {
     return this.presentations.addRating(id, body);
   }
 
+  @Post(":id/join-pages")
+  @ApiOperation({ summary: "Fügt eine Teilnahmeseite hinzu" })
+  addJoinPage(@Param("id") id: string) {
+    return this.presentations.addJoinPage(id);
+  }
+
   @Patch(":id/nodes/order")
   @ApiOperation({ summary: "Sortiert die Knoten einer Präsentation" })
   reorder(@Param("id") id: string, @Body() body: ReorderNodesDto) {

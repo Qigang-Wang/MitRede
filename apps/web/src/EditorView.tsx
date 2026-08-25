@@ -13,6 +13,7 @@ import {
   MessageSquareText,
   Play,
   Plus,
+  QrCode,
   Save,
   ScanEye,
   Trash2,
@@ -43,6 +44,9 @@ function NodeThumb({ node }: { node: PresentationNode }) {
   if (node.type === "RATING") {
     return <div className="poll-thumb rating-thumb"><Gauge size={24} /><strong>{node.config.question || "Neue Skalenfrage"}</strong><span>{node.config.min ?? 1}–{node.config.max ?? 5} Skala</span></div>;
   }
+  if (node.type === "JOIN_PAGE") {
+    return <div className="poll-thumb join-thumb"><QrCode size={24} /><strong>Jetzt teilnehmen</strong><span>QR-Code &amp; Raumcode</span></div>;
+  }
   if (node.config.assessmentMode === "QUIZ") {
     return <div className="poll-thumb quiz-thumb"><Trophy size={24} /><strong>{node.config.question || "Neue Quizfrage"}</strong><span>{node.config.options?.length ?? 0} Antworten</span></div>;
   }
@@ -53,11 +57,14 @@ function ResultDisplaySetting({ value, onChange }: { value: "MANUAL" | "LIVE"; o
   return <div className="result-display-setting"><div><strong>Ergebnisanzeige</strong><small>Wann sollen Stimmen auf der Leinwand erscheinen?</small></div><div className="result-display-options"><button className={value === "MANUAL" ? "active" : ""} onClick={() => onChange("MANUAL")}><strong>Am Ende</strong><span>Manuell veröffentlichen</span></button><button className={value === "LIVE" ? "active" : ""} onClick={() => onChange("LIVE")}><strong>Live</strong><span>Nach jeder Antwort</span></button></div><p>Die Antworten werden in beiden Modi sofort gespeichert.</p></div>;
 }
 
-function InteractionPicker({ onClose, onChoose }: { onClose: () => void; onChoose: (type: "MULTIPLE_CHOICE" | "RATING" | "QUIZ") => void }) {
+function InteractionPicker({ onClose, onChoose }: { onClose: () => void; onChoose: (type: "JOIN_PAGE" | "MULTIPLE_CHOICE" | "RATING" | "QUIZ") => void }) {
   return (
     <div className="interaction-picker-backdrop" onMouseDown={onClose}>
       <section className="interaction-picker" role="dialog" aria-modal="true" aria-labelledby="interaction-picker-title" onMouseDown={(event) => event.stopPropagation()}>
-        <header><div><p className="eyebrow">INTERAKTION EINFÜGEN</p><h2 id="interaction-picker-title">Interaktion auswählen</h2><p>Wählen Sie zwischen Meinungsabfrage und Wissensfrage.</p></div><button onClick={onClose} aria-label="Schließen"><X size={19} /></button></header>
+        <header><div><p className="eyebrow">SEITE EINFÜGEN</p><h2 id="interaction-picker-title">Interaktion auswählen</h2><p>Wählen Sie den passenden Seitentyp.</p></div><button onClick={onClose} aria-label="Schließen"><X size={19} /></button></header>
+        <div className="interaction-category participation"><div className="interaction-category-heading"><span>TEILNAHME</span><small>Zugang für das Publikum</small></div><div className="interaction-type-grid participation">
+          <button onClick={() => onChoose("JOIN_PAGE")}><span><QrCode size={24} /></span><strong>Teilnahmeseite</strong><small>QR-Code, Raumcode und kurze Anleitung</small></button>
+        </div></div>
         <div className="interaction-category"><div className="interaction-category-heading"><span>MEINUNGEN &amp; FEEDBACK</span><small>Ohne richtige oder falsche Antwort</small></div><div className="interaction-type-grid feedback">
           <button onClick={() => onChoose("MULTIPLE_CHOICE")}><span><ListChecks size={24} /></span><strong>Single Choice</strong><small>Eine Meinung aus mehreren Optionen</small></button>
           <button onClick={() => onChoose("RATING")}><span><Gauge size={24} /></span><strong>Skala</strong><small>Bewertung auf einer Zahlen-Skala</small></button>
@@ -116,7 +123,7 @@ export default function EditorView() {
   );
 
   useEffect(() => {
-    if (!selected || selected.type === "PDF_PAGE") return;
+    if (!selected || selected.type === "PDF_PAGE" || selected.type === "JOIN_PAGE") return;
     setQuestion(selected.config.question ?? "");
     setOptions(selected.config.options ?? []);
     setResultDisplayMode(selected.config.resultDisplayMode ?? "MANUAL");
@@ -133,7 +140,7 @@ export default function EditorView() {
   }, [selected?.id]);
 
   useEffect(() => {
-    if (!dirty || !selected || selected.type === "PDF_PAGE") return;
+    if (!dirty || !selected || selected.type === "PDF_PAGE" || selected.type === "JOIN_PAGE") return;
     if (question.trim().length < 3) return;
     if (selected.type === "MULTIPLE_CHOICE" && options.filter((option) => option.trim()).length < 2) return;
     if (selected.type === "RATING" && (ratingMax <= ratingMin || ratingMax - ratingMin > 10)) return;
@@ -153,10 +160,10 @@ export default function EditorView() {
     return () => window.clearTimeout(timer);
   }, [assessmentMode, correctOptionIndex, dirty, options, presentationId, question, ratingMax, ratingMaxLabel, ratingMin, ratingMinLabel, resultDisplayMode, selected]);
 
-  async function insertAfter(index: number, type: "MULTIPLE_CHOICE" | "RATING" | "QUIZ") {
+  async function insertAfter(index: number, type: "JOIN_PAGE" | "MULTIPLE_CHOICE" | "RATING" | "QUIZ") {
     if (!presentation) return;
     try {
-      const created = type === "RATING" ? await api.addRating(presentationId) : type === "QUIZ" ? await api.addQuiz(presentationId) : await api.addPoll(presentationId);
+      const created = type === "JOIN_PAGE" ? await api.addJoinPage(presentationId) : type === "RATING" ? await api.addRating(presentationId) : type === "QUIZ" ? await api.addQuiz(presentationId) : await api.addPoll(presentationId);
       const ids = presentation.nodes.map((node) => node.id);
       ids.splice(index + 1, 0, created.id);
       const reordered = await api.reorderNodes(presentationId, ids);
@@ -245,7 +252,7 @@ export default function EditorView() {
                 <span className="node-index">{index + 1}</span>
                 <GripVertical className="drag-handle" size={15} />
                 <NodeThumb node={node} />
-                <span className={node.type === "PDF_PAGE" ? "node-kind pdf" : node.type === "RATING" ? "node-kind rating" : node.config.assessmentMode === "QUIZ" ? "node-kind quiz" : "node-kind poll"}>{node.type === "PDF_PAGE" ? `PDF ${node.sourcePageNumber}` : node.type === "RATING" ? "SKALA" : node.config.assessmentMode === "QUIZ" ? "QUIZ" : "UMFRAGE"}</span>
+                <span className={node.type === "PDF_PAGE" ? "node-kind pdf" : node.type === "JOIN_PAGE" ? "node-kind join" : node.type === "RATING" ? "node-kind rating" : node.config.assessmentMode === "QUIZ" ? "node-kind quiz" : "node-kind poll"}>{node.type === "PDF_PAGE" ? `PDF ${node.sourcePageNumber}` : node.type === "JOIN_PAGE" ? "TEILNAHME" : node.type === "RATING" ? "SKALA" : node.config.assessmentMode === "QUIZ" ? "QUIZ" : "UMFRAGE"}</span>
               </button>
               <button className="insert-between" onClick={() => setInsertMenuIndex(index)} aria-label={`Interaktion nach Seite ${index + 1} einfügen`}><Plus size={13} /></button>
             </div>
@@ -256,6 +263,8 @@ export default function EditorView() {
       <main className="editor-canvas-area">
         {selected?.type === "PDF_PAGE" && selected.config.objectKey && selected.config.pageNumber ? (
           <div className="pdf-stage"><PdfPageCanvas objectKey={selected.config.objectKey} pageNumber={selected.config.pageNumber} /></div>
+        ) : selected?.type === "JOIN_PAGE" ? (
+          <div className="join-page-canvas"><div><p className="stage-kicker">MITREDE</p><h1>Jetzt teilnehmen</h1><p>QR-Code scannen oder manuell beitreten.</p></div><span className="join-page-qr"><QrCode size={112} /></span><div><small>RAUMCODE</small><strong>123 456</strong><p>Wird beim Start der Präsentation erstellt.</p></div></div>
         ) : selected?.type === "RATING" ? (
           <div className="poll-canvas rating-canvas"><p className="stage-kicker">LIVE-SKALA</p><h1>{question || "Neue Skalenfrage"}</h1><p>Wählen Sie eine Bewertung</p><div className="canvas-rating-scale">{Array.from({ length: ratingMax - ratingMin + 1 }, (_, index) => <span key={index}>{ratingMin + index}</span>)}</div><div className="canvas-rating-labels"><span>{ratingMinLabel}</span><span>{ratingMaxLabel}</span></div></div>
         ) : selected ? (
@@ -264,9 +273,11 @@ export default function EditorView() {
       </main>
 
       <aside className="properties-panel">
-        <div className="panel-heading"><span>EIGENSCHAFTEN</span><strong>{selected?.type === "PDF_PAGE" ? "PDF-Seite" : selected?.type === "RATING" ? "Skala" : assessmentMode === "QUIZ" ? "Single Choice Quiz" : "Single Choice"}</strong></div>
+        <div className="panel-heading"><span>EIGENSCHAFTEN</span><strong>{selected?.type === "PDF_PAGE" ? "PDF-Seite" : selected?.type === "JOIN_PAGE" ? "Teilnahmeseite" : selected?.type === "RATING" ? "Skala" : assessmentMode === "QUIZ" ? "Single Choice Quiz" : "Single Choice"}</strong></div>
         {selected?.type === "PDF_PAGE" ? (
           <div className="pdf-properties"><FileText size={28} /><h3>Seite {selected.sourcePageNumber}</h3><p>{selected.config.originalName}</p><dl><div><dt>Typ</dt><dd>PDF</dd></div><div><dt>Position</dt><dd>{selected.position + 1}</dd></div></dl><p className="property-hint">Ziehen Sie diese Seite im Ablauf nach oben oder unten, um ihre Position zu ändern.</p></div>
+        ) : selected?.type === "JOIN_PAGE" ? (
+          <div className="pdf-properties join-properties"><QrCode size={28} /><h3>Teilnahmeseite</h3><p>Zeigt beim Präsentieren den aktuellen QR-Code und Raumcode.</p><dl><div><dt>Typ</dt><dd>Teilnahme</dd></div><div><dt>Position</dt><dd>{selected.position + 1}</dd></div></dl><p className="property-hint">Ziehen Sie die Seite an die Stelle, an der das Publikum beitreten soll.</p><div className="property-actions"><button onClick={() => void duplicate()}><Copy size={16} /> Duplizieren</button><button className="danger" onClick={() => void remove()}><Trash2 size={16} /> Löschen</button></div></div>
         ) : selected?.type === "RATING" ? (
           <div className="poll-properties rating-properties">
             <label>Frage<textarea value={question} onChange={(event) => { setQuestion(event.target.value); setDirty(true); }} rows={4} /></label>

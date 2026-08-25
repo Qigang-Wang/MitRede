@@ -67,7 +67,7 @@ export class SessionsService {
       },
       participantCount: session._count.participants,
       answerCount: session._count.answers,
-      interactionCount: session.presentation.nodes.filter((node) => node.type !== "PDF_PAGE").length,
+      interactionCount: session.presentation.nodes.filter((node) => node.type === "MULTIPLE_CHOICE" || node.type === "RATING").length,
     }));
   }
 
@@ -88,7 +88,7 @@ export class SessionsService {
     if (!session) throw new NotFoundException("Sitzung nicht gefunden");
 
     const questions = session.presentation.nodes
-      .filter((node) => node.type !== "PDF_PAGE")
+      .filter((node) => node.type === "MULTIPLE_CHOICE" || node.type === "RATING")
       .map((node) => {
         const config = node.config as PollConfig;
         const answers = session.answers.filter((answer) => answer.nodeId === node.id);

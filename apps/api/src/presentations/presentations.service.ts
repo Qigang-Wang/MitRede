@@ -69,7 +69,7 @@ export class PresentationsService {
     return items.map(({ nodes, ...presentation }) => ({
       ...presentation,
       pageCount: nodes.filter((node) => node.type === "PDF_PAGE").length,
-      interactionCount: nodes.filter((node) => node.type !== "PDF_PAGE").length,
+      interactionCount: nodes.filter((node) => node.type === "MULTIPLE_CHOICE" || node.type === "RATING").length,
     }));
   }
 
@@ -218,6 +218,26 @@ export class PresentationsService {
           position: (aggregate._max.position ?? -1) + 1,
           type: "RATING",
           config: this.ratingConfig(body),
+        },
+      });
+      await tx.presentation.update({ where: { id }, data: { revision: { increment: 1 } } });
+      return created;
+    });
+  }
+
+  async addJoinPage(id: string) {
+    await this.get(id);
+    const aggregate = await this.prisma.presentationNode.aggregate({
+      where: { presentationId: id },
+      _max: { position: true },
+    });
+    return this.prisma.$transaction(async (tx) => {
+      const created = await tx.presentationNode.create({
+        data: {
+          presentationId: id,
+          position: (aggregate._max.position ?? -1) + 1,
+          type: "JOIN_PAGE",
+          config: { title: "Jetzt teilnehmen" },
         },
       });
       await tx.presentation.update({ where: { id }, data: { revision: { increment: 1 } } });

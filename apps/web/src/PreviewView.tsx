@@ -13,6 +13,7 @@ import {
   PanelRightClose,
   PanelRightOpen,
   Radio,
+  QrCode,
   RotateCcw,
   Smartphone,
   X,
@@ -79,6 +80,7 @@ function PhonePreview({
   onReset: () => void;
 }) {
   const isPdf = node?.type === "PDF_PAGE";
+  const isJoinPage = node?.type === "JOIN_PAGE";
   const isRating = node?.type === "RATING";
   const isQuiz = node?.config.assessmentMode === "QUIZ";
   const correctOptionIndex = resultsVisible ? node?.config.correctOptionIndex : undefined;
@@ -93,12 +95,12 @@ function PhonePreview({
           <small><i /> VORSCHAU</small>
         </header>
         <main className="preview-phone-content">
-          {isPdf ? (
+          {isPdf || isJoinPage ? (
             <div className="preview-phone-wait">
-              <FileText size={34} />
-              <span>PRÄSENTATION LÄUFT</span>
-              <h2>Folgen Sie der Präsentation auf der Leinwand.</h2>
-              <p>Die nächste Interaktion erscheint automatisch hier.</p>
+              {isJoinPage ? <QrCode size={34} /> : <FileText size={34} />}
+              <span>{isJoinPage ? "BEREIT ZUR TEILNAHME" : "PRÄSENTATION LÄUFT"}</span>
+              <h2>{isJoinPage ? "Scannen Sie den QR-Code auf der Leinwand." : "Folgen Sie der Präsentation auf der Leinwand."}</h2>
+              <p>{isJoinPage ? "Danach erscheinen Fragen automatisch hier." : "Die nächste Interaktion erscheint automatisch hier."}</p>
             </div>
           ) : status === "NOT_OPEN" ? (
             <div className="preview-phone-wait">
@@ -174,6 +176,7 @@ export default function PreviewView() {
   const currentNode = presentation?.nodes[currentIndex] ?? null;
   const options = currentNode?.config.options ?? [];
   const isPdf = currentNode?.type === "PDF_PAGE";
+  const isJoinPage = currentNode?.type === "JOIN_PAGE";
   const isRating = currentNode?.type === "RATING";
   const isQuiz = currentNode?.config.assessmentMode === "QUIZ";
   const referencePdf = presentation?.nodes.find((node) => node.type === "PDF_PAGE" && node.config.objectKey && node.config.pageNumber);
@@ -266,10 +269,12 @@ export default function PreviewView() {
 
       <main className={phoneVisible ? "preview-workspace" : "preview-workspace phone-hidden"}>
         <section className="preview-projector-column">
-          <div className="preview-column-heading"><span>PROJEKTIONSANSICHT</span><small>{isPdf ? `PDF · Seite ${currentNode?.sourcePageNumber}` : status === "ACCEPTING" ? "Antworten offen" : status === "LOCKED" ? "Antworten gesperrt" : "Noch nicht geöffnet"}</small></div>
-          <div className={`preview-projector ${isPdf ? "is-pdf" : "is-poll"}`} ref={projectorRef}>
+          <div className="preview-column-heading"><span>PROJEKTIONSANSICHT</span><small>{isPdf ? `PDF · Seite ${currentNode?.sourcePageNumber}` : isJoinPage ? "Teilnahmeseite" : status === "ACCEPTING" ? "Antworten offen" : status === "LOCKED" ? "Antworten gesperrt" : "Noch nicht geöffnet"}</small></div>
+          <div className={`preview-projector ${isPdf ? "is-pdf" : isJoinPage ? "is-join" : "is-poll"}`} ref={projectorRef}>
             {isPdf && currentNode?.config.objectKey && currentNode.config.pageNumber ? (
               <div className="preview-projector-pdf"><PdfPageCanvas objectKey={currentNode.config.objectKey} pageNumber={currentNode.config.pageNumber} fitContainer /></div>
+            ) : isJoinPage ? (
+              <div className="preview-join-page" style={pollWidth > 0 && pollHeight > 0 ? { width: pollWidth, height: pollHeight } : { aspectRatio: slideAspectRatio }}><div><p className="stage-kicker">MITREDE</p><h1>Jetzt teilnehmen</h1><p>QR-Code scannen oder manuell beitreten.</p></div><span><QrCode size={120} /></span><div><small>RAUMCODE</small><strong>123 456</strong><p>Der echte Code wird beim Präsentieren erstellt.</p></div></div>
             ) : (
               <div className="preview-projector-poll" style={pollWidth > 0 && pollHeight > 0 ? { width: pollWidth, height: pollHeight } : { aspectRatio: slideAspectRatio }}>
                 <p className="stage-kicker">{isRating ? "LIVE-SKALA" : isQuiz ? "WISSENSFRAGE" : "LIVE-UMFRAGE"}</p>

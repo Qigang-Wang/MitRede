@@ -20,6 +20,7 @@ enum PresentationStatus {
 
 enum NodeType {
   PDF_PAGE
+  JOIN_PAGE
   MULTIPLE_CHOICE
   RATING
   WORD_CLOUD
@@ -136,4 +137,3 @@ model Answer {
   @@unique([liveSessionId, nodeId, participantId])
   @@index([liveSessionId, nodeId])
 }
-
