@@ -234,9 +234,8 @@ function PresenterView() {
   const [laserPoint, setLaserPoint] = useState<{ x: number; y: number } | null>(null);
   const [roomVisible, setRoomVisible] = useState(true);
   const [blackout, setBlackout] = useState(false);
-  const [controlsVisible, setControlsVisible] = useState(true);
+  const [controlsVisible, setControlsVisible] = useState(false);
   const [fullscreenRequired, setFullscreenRequired] = useState(false);
-  const idleTimer = useRef<number | null>(null);
   const fullscreenAttempted = useRef(false);
 
   const load = useCallback(async () => {
@@ -291,18 +290,6 @@ function PresenterView() {
     void document.documentElement.requestFullscreen?.().then(() => setFullscreenRequired(false)).catch(() => setFullscreenRequired(true));
   }, []);
 
-  const wakeControls = useCallback(() => {
-    setControlsVisible(true);
-    if (idleTimer.current !== null) window.clearTimeout(idleTimer.current);
-    idleTimer.current = window.setTimeout(() => {
-      if (!consoleOpen) setControlsVisible(false);
-    }, 2400);
-  }, [consoleOpen]);
-
-  useEffect(() => () => {
-    if (idleTimer.current !== null) window.clearTimeout(idleTimer.current);
-  }, []);
-
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.target instanceof HTMLElement && event.target.closest("button, input, textarea, select, a")) return;
@@ -314,11 +301,10 @@ function PresenterView() {
       if (key === "r") setRoomVisible((value) => !value);
       if (key === "c") setConsoleOpen((value) => !value);
       if (key === "f") enterFullscreen();
-      wakeControls();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [enterFullscreen, move, wakeControls]);
+  }, [enterFullscreen, move]);
 
   if (sessionId === "starting") return <div className="projection-starting"><MessageCircleMore size={34} /><strong>MitRede</strong><span>Präsentation wird vorbereitet…</span></div>;
   if (!snapshot) return <LoadingScreen message={error || "Live-Sitzung wird geladen…"} />;
@@ -330,7 +316,7 @@ function PresenterView() {
   const joinUrl = `${window.location.origin}/join/${snapshot.roomCode}`;
 
   return (
-    <div className={["projection-shell", controlsVisible || consoleOpen ? "controls-visible" : "controls-hidden", laserEnabled ? "laser-active" : ""].filter(Boolean).join(" ")} onMouseMove={(event) => { wakeControls(); if (laserEnabled) setLaserPoint({ x: event.clientX, y: event.clientY }); }}>
+    <div className={["projection-shell", controlsVisible || consoleOpen ? "controls-visible" : "controls-hidden", laserEnabled ? "laser-active" : ""].filter(Boolean).join(" ")} onMouseMove={(event) => { if (laserEnabled) setLaserPoint({ x: event.clientX, y: event.clientY }); }}>
       <main className="projection-stage" onClick={() => { if (!laserEnabled && !blackout && !consoleOpen) move(1); }}>
         {isPdf && poll?.objectKey && poll.pageNumber ? <div className="presented-pdf projection-pdf"><PdfPageCanvas objectKey={poll.objectKey} pageNumber={poll.pageNumber} fitContainer /></div> : <div className="stage projection-poll"><p className="stage-kicker">{isRating ? "LIVE-SKALA" : isQuiz ? "WISSENSFRAGE" : "LIVE-UMFRAGE"}</p><h1>{poll?.question ?? "Keine aktuelle Frage"}</h1><p className="stage-subtitle">{isRating ? "Wählen Sie eine Bewertung" : "Eine Antwort auswählen"}</p>{snapshot.resultsVisible ? <SessionResultDisplay options={poll?.options ?? []} counts={snapshot.results.counts} total={total} rating={isRating} correctOptionIndex={isQuiz ? poll?.correctOptionIndex : undefined} /> : <div className="results-hidden"><BarChart3 size={34} /><strong>Antworten werden gesammelt</strong><span>Die Ergebnisse erscheinen nach der Freigabe.</span></div>}<p className="answer-count"><Check size={16} /> {total} Antworten eingegangen</p></div>}
       </main>
@@ -338,7 +324,7 @@ function PresenterView() {
       {blackout && <div className="projection-blackout" aria-label="Schwarzer Bildschirm" />}
       {laserEnabled && laserPoint && !blackout && <span className="projection-laser" style={{ left: laserPoint.x, top: laserPoint.y }} />}
       {fullscreenRequired && !document.fullscreenElement && <button className="projection-fullscreen-prompt" onClick={enterFullscreen}><Fullscreen size={22} /><span><strong>Vollbild starten</strong><small>Einmal klicken, um die Präsentation bildschirmfüllend zu zeigen.</small></span></button>}
-      <div className="projection-dock-zone" onMouseEnter={wakeControls}>
+      <div className="projection-dock-zone" onMouseEnter={() => setControlsVisible(true)} onMouseLeave={() => { if (!consoleOpen) setControlsVisible(false); }}>
         {consoleOpen && <section className="projection-console" onClick={(event) => event.stopPropagation()}>
           <header><div><span className="live-badge"><i /> LIVE</span><strong>{snapshot.presentation.title}</strong></div><button onClick={() => setConsoleOpen(false)} aria-label="Konsole schließen"><X size={18} /></button></header>
           <div className="projection-console-status"><span>Seite {currentIndex + 1} von {timeline.length}</span><span><Users size={15} /> {total} Antworten</span></div>
