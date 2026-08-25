@@ -217,3 +217,18 @@ export function connectToSession(
   socket.on("session:event", onChange);
   return socket;
 }
+
+export function prepareProjectionWindow() {
+  return window.open("/present/starting", "mitrede-projection", "popup=yes,width=1440,height=900");
+}
+
+export function showProjectionWindow(projectionWindow: Window | null, sessionId: string) {
+  const path = `/present/${encodeURIComponent(sessionId)}`;
+  if (projectionWindow && !projectionWindow.closed) {
+    projectionWindow.location.replace(path);
+    projectionWindow.focus();
+    return;
+  }
+  window.history.pushState({}, "", path);
+  window.dispatchEvent(new PopStateEvent("popstate"));
+}

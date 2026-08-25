@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -9,10 +9,14 @@ import {
   Clock3,
   FileText,
   Fullscreen,
+  Eye,
+  EyeOff,
   LayoutDashboard,
   Lock,
   MessageCircleMore,
+  MonitorCog,
   MoreHorizontal,
+  MousePointer2,
   Play,
   Plus,
   Presentation,
@@ -28,6 +32,8 @@ import {
 import {
   api,
   connectToSession,
+  prepareProjectionWindow,
+  showProjectionWindow,
   type PresentationSummary,
   type SessionSnapshot,
 } from "./api";
@@ -139,11 +145,14 @@ function Dashboard() {
   }, [error, load]);
 
   async function start(presentationId: string) {
+    const projectionWindow = prepareProjectionWindow();
     setStartingId(presentationId);
     try {
       const session = await api.startSession(presentationId);
-      navigate(`/present/${session.sessionId}`);
+      showProjectionWindow(projectionWindow, session.sessionId);
+      setStartingId(null);
     } catch (caught) {
+      projectionWindow?.close();
       setError(caught instanceof Error ? caught.message : "Sitzung konnte nicht gestartet werden");
       setStartingId(null);
     }
@@ -220,17 +229,35 @@ function PresenterView() {
   const sessionId = pathId();
   const [snapshot, setSnapshot] = useState<SessionSnapshot | null>(null);
   const [error, setError] = useState("");
+  const [consoleOpen, setConsoleOpen] = useState(false);
+  const [laserEnabled, setLaserEnabled] = useState(false);
+  const [laserPoint, setLaserPoint] = useState<{ x: number; y: number } | null>(null);
+  const [roomVisible, setRoomVisible] = useState(true);
+  const [blackout, setBlackout] = useState(false);
+  const [controlsVisible, setControlsVisible] = useState(true);
+  const [fullscreenRequired, setFullscreenRequired] = useState(false);
+  const idleTimer = useRef<number | null>(null);
+  const fullscreenAttempted = useRef(false);
 
   const load = useCallback(async () => {
+    if (sessionId === "starting") return;
     try { setSnapshot(await api.sessionSnapshot(sessionId)); setError(""); }
     catch (caught) { setError(caught instanceof Error ? caught.message : "Sitzung nicht erreichbar"); }
   }, [sessionId]);
 
   useEffect(() => {
+    if (sessionId === "starting") return;
     void load();
     const socket = connectToSession(sessionId, () => void load());
     return () => { socket.disconnect(); };
   }, [load, sessionId]);
+
+  useEffect(() => {
+    if (!snapshot || fullscreenAttempted.current) return;
+    fullscreenAttempted.current = true;
+    if (document.fullscreenElement) return;
+    void document.documentElement.requestFullscreen?.().then(() => setFullscreenRequired(false)).catch(() => setFullscreenRequired(true));
+  }, [snapshot]);
 
   async function update(body: { interactionStatus?: SessionSnapshot["interactionStatus"]; resultsVisible?: boolean; currentNodeId?: string }) {
     try { setSnapshot(await api.updateSession(sessionId, body)); }
@@ -247,25 +274,88 @@ function PresenterView() {
     }
   }
 
+  const timeline = snapshot?.timeline ?? [];
+  const currentIndex = timeline.findIndex((node) => node.id === snapshot?.currentNode?.id);
+
+  const move = useCallback((offset: number) => {
+    if (!snapshot) return;
+    const next = (snapshot.timeline ?? [])[currentIndex + offset];
+    if (next) void api.updateSession(sessionId, { currentNodeId: next.id }).then(setSnapshot).catch((caught) => setError(caught instanceof Error ? caught.message : "Seite konnte nicht gewechselt werden"));
+  }, [currentIndex, sessionId, snapshot]);
+
+  const enterFullscreen = useCallback(() => {
+    if (document.fullscreenElement) {
+      void document.exitFullscreen?.();
+      return;
+    }
+    void document.documentElement.requestFullscreen?.().then(() => setFullscreenRequired(false)).catch(() => setFullscreenRequired(true));
+  }, []);
+
+  const wakeControls = useCallback(() => {
+    setControlsVisible(true);
+    if (idleTimer.current !== null) window.clearTimeout(idleTimer.current);
+    idleTimer.current = window.setTimeout(() => {
+      if (!consoleOpen) setControlsVisible(false);
+    }, 2400);
+  }, [consoleOpen]);
+
+  useEffect(() => () => {
+    if (idleTimer.current !== null) window.clearTimeout(idleTimer.current);
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.target instanceof HTMLElement && event.target.closest("button, input, textarea, select, a")) return;
+      const key = event.key.toLowerCase();
+      if (["arrowright", "pagedown", " "].includes(key)) { event.preventDefault(); move(1); }
+      if (["arrowleft", "pageup"].includes(key)) { event.preventDefault(); move(-1); }
+      if (key === "b") setBlackout((value) => !value);
+      if (key === "l") setLaserEnabled((value) => !value);
+      if (key === "r") setRoomVisible((value) => !value);
+      if (key === "c") setConsoleOpen((value) => !value);
+      if (key === "f") enterFullscreen();
+      wakeControls();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [enterFullscreen, move, wakeControls]);
+
+  if (sessionId === "starting") return <div className="projection-starting"><MessageCircleMore size={34} /><strong>MitRede</strong><span>Präsentation wird vorbereitet…</span></div>;
   if (!snapshot) return <LoadingScreen message={error || "Live-Sitzung wird geladen…"} />;
   const poll = snapshot.currentNode?.config;
   const total = snapshot.results.total;
-  const timeline = snapshot.timeline ?? [];
-  const currentIndex = timeline.findIndex((node) => node.id === snapshot.currentNode?.id);
   const isPdf = snapshot.currentNode?.type === "PDF_PAGE";
   const isRating = snapshot.currentNode?.type === "RATING";
   const isQuiz = poll?.assessmentMode === "QUIZ";
-
-  function move(offset: number) {
-    const next = timeline[currentIndex + offset];
-    if (next) void update({ currentNodeId: next.id });
-  }
+  const joinUrl = `${window.location.origin}/join/${snapshot.roomCode}`;
 
   return (
-    <div className="presenter-shell">
-      <header className="presenter-topbar"><button className="icon-button dark" onClick={() => void endSession()} aria-label="Präsentation beenden" title="Präsentation beenden"><X size={21} /></button><div><strong>{snapshot.presentation.title}</strong><span className="live-badge"><i /> LIVE</span></div><div className="presenter-meta"><Users size={18} /> {total} Antworten <button className="room-code" onClick={() => navigate(`/join/${snapshot.roomCode}`)} title="Teilnahmeansicht öffnen"><QrCode size={18} /> {snapshot.roomCode.slice(0, 3)} {snapshot.roomCode.slice(3)}</button></div></header>
-      <main className="stage-wrap">{isPdf && poll?.objectKey && poll.pageNumber ? <div className="presented-pdf"><PdfPageCanvas objectKey={poll.objectKey} pageNumber={poll.pageNumber} /></div> : <div className="stage"><p className="stage-kicker">{isRating ? "LIVE-SKALA" : isQuiz ? "WISSENSFRAGE" : "LIVE-UMFRAGE"}</p><h1>{poll?.question ?? "Keine aktuelle Frage"}</h1><p className="stage-subtitle">{isRating ? "Wählen Sie eine Bewertung" : "Eine Antwort auswählen"}</p>{snapshot.resultsVisible ? <SessionResultDisplay options={poll?.options ?? []} counts={snapshot.results.counts} total={total} rating={isRating} correctOptionIndex={isQuiz ? poll?.correctOptionIndex : undefined} /> : <div className="results-hidden"><BarChart3 size={34} /><strong>Ergebnisse verborgen</strong><span>Die Stimmen werden weiterhin gesammelt.</span></div>}<p className="answer-count"><Check size={16} /> {total} Antworten eingegangen</p></div>}</main>
-      <footer className="presenter-controls"><div className="page-controls"><button disabled={currentIndex <= 0} onClick={() => move(-1)}><ArrowLeft size={19} /></button><span>{currentIndex + 1} / {timeline.length}</span><button disabled={currentIndex < 0 || currentIndex >= timeline.length - 1} onClick={() => move(1)}><ArrowRight size={19} /></button></div><div className="moderation-controls">{isPdf ? <span className="pdf-live-label"><FileText size={17} /> PDF-Seite {snapshot.currentNode?.sourcePageNumber}</span> : <><button className={snapshot.interactionStatus === "ACCEPTING" ? "control active" : "control"} onClick={() => void update({ interactionStatus: snapshot.interactionStatus === "ACCEPTING" ? "LOCKED" : "ACCEPTING" })}>{snapshot.interactionStatus === "ACCEPTING" ? <Radio size={18} /> : <Lock size={18} />}{snapshot.interactionStatus === "ACCEPTING" ? "Antworten offen" : "Antworten gesperrt"}</button><button className={snapshot.resultsVisible ? "control active" : "control"} onClick={() => void update({ resultsVisible: !snapshot.resultsVisible })}><BarChart3 size={18} /> {snapshot.resultsVisible ? "Ergebnisse sichtbar" : "Ergebnisse verborgen"}</button></>}</div><button className="control" onClick={() => document.documentElement.requestFullscreen?.()}><Fullscreen size={18} /></button></footer>
+    <div className={["projection-shell", controlsVisible || consoleOpen ? "controls-visible" : "controls-hidden", laserEnabled ? "laser-active" : ""].filter(Boolean).join(" ")} onMouseMove={(event) => { wakeControls(); if (laserEnabled) setLaserPoint({ x: event.clientX, y: event.clientY }); }}>
+      <main className="projection-stage" onClick={() => { if (!laserEnabled && !blackout && !consoleOpen) move(1); }}>
+        {isPdf && poll?.objectKey && poll.pageNumber ? <div className="presented-pdf projection-pdf"><PdfPageCanvas objectKey={poll.objectKey} pageNumber={poll.pageNumber} /></div> : <div className="stage projection-poll"><p className="stage-kicker">{isRating ? "LIVE-SKALA" : isQuiz ? "WISSENSFRAGE" : "LIVE-UMFRAGE"}</p><h1>{poll?.question ?? "Keine aktuelle Frage"}</h1><p className="stage-subtitle">{isRating ? "Wählen Sie eine Bewertung" : "Eine Antwort auswählen"}</p>{snapshot.resultsVisible ? <SessionResultDisplay options={poll?.options ?? []} counts={snapshot.results.counts} total={total} rating={isRating} correctOptionIndex={isQuiz ? poll?.correctOptionIndex : undefined} /> : <div className="results-hidden"><BarChart3 size={34} /><strong>Antworten werden gesammelt</strong><span>Die Ergebnisse erscheinen nach der Freigabe.</span></div>}<p className="answer-count"><Check size={16} /> {total} Antworten eingegangen</p></div>}
+      </main>
+      {roomVisible && !blackout && <aside className="projection-room"><QrCode size={23} /><span>TEILNEHMEN</span><strong>{snapshot.roomCode.slice(0, 3)} {snapshot.roomCode.slice(3)}</strong><small>{joinUrl}</small></aside>}
+      {blackout && <div className="projection-blackout" aria-label="Schwarzer Bildschirm" />}
+      {laserEnabled && laserPoint && !blackout && <span className="projection-laser" style={{ left: laserPoint.x, top: laserPoint.y }} />}
+      {fullscreenRequired && !document.fullscreenElement && <button className="projection-fullscreen-prompt" onClick={enterFullscreen}><Fullscreen size={22} /><span><strong>Vollbild starten</strong><small>Einmal klicken, um die Präsentation bildschirmfüllend zu zeigen.</small></span></button>}
+      <div className="projection-dock-zone" onMouseEnter={wakeControls}>
+        {consoleOpen && <section className="projection-console" onClick={(event) => event.stopPropagation()}>
+          <header><div><span className="live-badge"><i /> LIVE</span><strong>{snapshot.presentation.title}</strong></div><button onClick={() => setConsoleOpen(false)} aria-label="Konsole schließen"><X size={18} /></button></header>
+          <div className="projection-console-status"><span>Seite {currentIndex + 1} von {timeline.length}</span><span><Users size={15} /> {total} Antworten</span></div>
+          <div className="projection-console-pages"><button disabled={currentIndex <= 0} onClick={() => move(-1)}><ArrowLeft size={18} /> Zurück</button><button disabled={currentIndex >= timeline.length - 1} onClick={() => move(1)}>Weiter <ArrowRight size={18} /></button></div>
+          {!isPdf && <div className="projection-console-interaction"><button className={snapshot.interactionStatus === "ACCEPTING" ? "active" : ""} onClick={() => void update({ interactionStatus: snapshot.interactionStatus === "ACCEPTING" ? "LOCKED" : "ACCEPTING" })}>{snapshot.interactionStatus === "ACCEPTING" ? <Radio size={17} /> : <Lock size={17} />}{snapshot.interactionStatus === "ACCEPTING" ? "Antworten offen" : "Antworten gesperrt"}</button><button className={snapshot.resultsVisible ? "active" : ""} onClick={() => void update({ resultsVisible: !snapshot.resultsVisible })}>{snapshot.resultsVisible ? <Eye size={17} /> : <EyeOff size={17} />}{snapshot.resultsVisible ? "Ergebnisse sichtbar" : "Ergebnisse zeigen"}</button></div>}
+          <div className="projection-console-shortcuts"><span>← → Seiten</span><span>L Laser</span><span>B Schwarz</span><span>R Raumcode</span></div>
+          {error && <p>{error}</p>}
+          <button className="projection-end" onClick={() => void endSession()}><X size={16} /> Präsentation beenden</button>
+        </section>}
+        <nav className="projection-dock" aria-label="Präsentationswerkzeuge" onClick={(event) => event.stopPropagation()}>
+          <button className={consoleOpen ? "active" : ""} onClick={() => setConsoleOpen((value) => !value)} title="Konsole (C)"><MonitorCog size={19} /><span>Konsole</span></button>
+          <button className={laserEnabled ? "active laser" : ""} onClick={() => setLaserEnabled((value) => !value)} title="Laser (L)"><MousePointer2 size={19} /><span>Laser</span></button>
+          <button className={roomVisible ? "active" : ""} onClick={() => setRoomVisible((value) => !value)} title="Raumcode (R)"><QrCode size={19} /><span>Raum</span></button>
+          <button className={blackout ? "active" : ""} onClick={() => setBlackout((value) => !value)} title="Schwarzer Bildschirm (B)"><EyeOff size={19} /><span>Schwarz</span></button>
+          <button onClick={enterFullscreen} title="Vollbild (F)"><Fullscreen size={19} /><span>Vollbild</span></button>
+        </nav>
+      </div>
     </div>
   );
 }

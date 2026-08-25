@@ -20,7 +20,7 @@ import {
   Vote,
   X,
 } from "lucide-react";
-import { api, type PresentationDetails, type PresentationNode } from "./api";
+import { api, prepareProjectionWindow, showProjectionWindow, type PresentationDetails, type PresentationNode } from "./api";
 import { PdfPageCanvas } from "./PdfPage";
 
 function editorPresentationId() {
@@ -203,8 +203,14 @@ export default function EditorView() {
   }
 
   async function start() {
-    const session = await api.startSession(presentationId);
-    go(`/present/${session.sessionId}`);
+    const projectionWindow = prepareProjectionWindow();
+    try {
+      const session = await api.startSession(presentationId);
+      showProjectionWindow(projectionWindow, session.sessionId);
+    } catch (caught) {
+      projectionWindow?.close();
+      setError(caught instanceof Error ? caught.message : "Präsentation konnte nicht gestartet werden");
+    }
   }
 
   if (!presentation) return <div className="editor-loading"><EditorBrand /><p>{error || "Editor wird geladen…"}</p></div>;
