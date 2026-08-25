@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   Check,
@@ -22,7 +22,7 @@ import {
   X,
 } from "lucide-react";
 import { api, prepareProjectionWindow, showProjectionWindow, type PresentationDetails, type PresentationNode } from "./api";
-import { PdfPageCanvas } from "./PdfPage";
+import { PdfPageCanvas, usePdfPageAspectRatio } from "./PdfPage";
 
 function editorPresentationId() {
   return decodeURIComponent(window.location.pathname.split("/").filter(Boolean)[2] ?? "");
@@ -100,6 +100,8 @@ export default function EditorView() {
   const [dirty, setDirty] = useState(false);
   const [saveState, setSaveState] = useState<"saved" | "saving" | "error">("saved");
   const [error, setError] = useState("");
+  const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
+  const canvasAreaRef = useRef<HTMLElement>(null);
   const initialNodeId = useMemo(() => new URLSearchParams(window.location.search).get("node") ?? undefined, []);
 
   const load = useCallback(async (preferredId?: string) => {
@@ -121,6 +123,39 @@ export default function EditorView() {
     () => presentation?.nodes.find((node) => node.id === selectedId) ?? null,
     [presentation, selectedId],
   );
+  const referencePdf = presentation?.nodes.find((node) => node.type === "PDF_PAGE" && node.config.objectKey && node.config.pageNumber);
+  const slideAspectRatio = usePdfPageAspectRatio(referencePdf?.config.objectKey, referencePdf?.config.pageNumber);
+  const slideWidth = Math.min(canvasSize.width, canvasSize.height * slideAspectRatio);
+  const slideHeight = slideWidth / slideAspectRatio;
+  const slideStyle = slideWidth > 0 && slideHeight > 0 ? { width: slideWidth, height: slideHeight } : undefined;
+
+  useEffect(() => {
+    const area = canvasAreaRef.current;
+    if (!area) return;
+    let animationFrame = 0;
+    const updateSize = () => {
+      window.cancelAnimationFrame(animationFrame);
+      animationFrame = window.requestAnimationFrame(() => {
+        const style = window.getComputedStyle(area);
+        const horizontalPadding = Number.parseFloat(style.paddingLeft) + Number.parseFloat(style.paddingRight);
+        const verticalPadding = Number.parseFloat(style.paddingTop) + Number.parseFloat(style.paddingBottom);
+        const next = {
+          width: Math.max(0, area.clientWidth - horizontalPadding),
+          height: Math.max(0, area.clientHeight - verticalPadding),
+        };
+        setCanvasSize((current) => current.width === next.width && current.height === next.height ? current : next);
+      });
+    };
+    updateSize();
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(area);
+    window.addEventListener("resize", updateSize);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", updateSize);
+      window.cancelAnimationFrame(animationFrame);
+    };
+  }, [presentation !== null]);
 
   useEffect(() => {
     if (!selected || selected.type === "PDF_PAGE" || selected.type === "JOIN_PAGE") return;
@@ -260,15 +295,15 @@ export default function EditorView() {
         </div>
       </aside>
 
-      <main className="editor-canvas-area">
+      <main className="editor-canvas-area" ref={canvasAreaRef}>
         {selected?.type === "PDF_PAGE" && selected.config.objectKey && selected.config.pageNumber ? (
-          <div className="pdf-stage"><PdfPageCanvas objectKey={selected.config.objectKey} pageNumber={selected.config.pageNumber} /></div>
+          <div className="pdf-stage editor-slide-frame" style={slideStyle}><PdfPageCanvas objectKey={selected.config.objectKey} pageNumber={selected.config.pageNumber} fitContainer /></div>
         ) : selected?.type === "JOIN_PAGE" ? (
-          <div className="join-page-canvas"><div><p className="stage-kicker">MITREDE</p><h1>Jetzt teilnehmen</h1><p>QR-Code scannen oder manuell beitreten.</p></div><span className="join-page-qr"><QrCode size={112} /></span><div><small>RAUMCODE</small><strong>123 456</strong><p>Wird beim Start der Präsentation erstellt.</p></div></div>
+          <div className="join-page-canvas editor-slide-frame" style={slideStyle}><div><p className="stage-kicker">MITREDE</p><h1>Jetzt teilnehmen</h1><p>QR-Code scannen oder manuell beitreten.</p></div><span className="join-page-qr"><QrCode size={112} /></span><div><small>RAUMCODE</small><strong>123 456</strong><p>Wird beim Start der Präsentation erstellt.</p></div></div>
         ) : selected?.type === "RATING" ? (
-          <div className="poll-canvas rating-canvas"><p className="stage-kicker">LIVE-SKALA</p><h1>{question || "Neue Skalenfrage"}</h1><p>Wählen Sie eine Bewertung</p><div className="canvas-rating-scale">{Array.from({ length: ratingMax - ratingMin + 1 }, (_, index) => <span key={index}>{ratingMin + index}</span>)}</div><div className="canvas-rating-labels"><span>{ratingMinLabel}</span><span>{ratingMaxLabel}</span></div></div>
+          <div className="poll-canvas rating-canvas editor-slide-frame" style={slideStyle}><p className="stage-kicker">LIVE-SKALA</p><h1>{question || "Neue Skalenfrage"}</h1><p>Wählen Sie eine Bewertung</p><div className="canvas-rating-scale">{Array.from({ length: ratingMax - ratingMin + 1 }, (_, index) => <span key={index}>{ratingMin + index}</span>)}</div><div className="canvas-rating-labels"><span>{ratingMinLabel}</span><span>{ratingMaxLabel}</span></div></div>
         ) : selected ? (
-          <div className={assessmentMode === "QUIZ" ? "poll-canvas quiz-canvas" : "poll-canvas"}><p className="stage-kicker">{assessmentMode === "QUIZ" ? "WISSENSFRAGE" : "LIVE-UMFRAGE"}</p><h1>{question || "Neue Frage"}</h1><p>Eine Antwort auswählen</p><div className="canvas-options">{options.map((option, index) => <div className={assessmentMode === "QUIZ" && correctOptionIndex === index ? "correct" : ""} key={`${index}-${option}`}><span>{String.fromCharCode(65 + index)}</span>{option || `Option ${index + 1}`}{assessmentMode === "QUIZ" && correctOptionIndex === index && <Check size={16} />}</div>)}</div></div>
+          <div className={`${assessmentMode === "QUIZ" ? "poll-canvas quiz-canvas" : "poll-canvas"} editor-slide-frame`} style={slideStyle}><p className="stage-kicker">{assessmentMode === "QUIZ" ? "WISSENSFRAGE" : "LIVE-UMFRAGE"}</p><h1>{question || "Neue Frage"}</h1><p>Eine Antwort auswählen</p><div className="canvas-options">{options.map((option, index) => <div className={assessmentMode === "QUIZ" && correctOptionIndex === index ? "correct" : ""} key={`${index}-${option}`}><span>{String.fromCharCode(65 + index)}</span>{option || `Option ${index + 1}`}{assessmentMode === "QUIZ" && correctOptionIndex === index && <Check size={16} />}</div>)}</div></div>
         ) : <div className="empty-canvas"><FileText size={34} /><p>Wählen Sie eine Seite aus.</p></div>}
       </main>
 
