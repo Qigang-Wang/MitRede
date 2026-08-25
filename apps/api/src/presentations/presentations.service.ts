@@ -324,12 +324,6 @@ export class PresentationsService {
     if (nodeIds.some((nodeId) => !byId.has(nodeId))) {
       throw new BadRequestException("Die Knotenliste enthält fremde Einträge");
     }
-    const previousPdfOrder = nodes.filter((node) => node.type === "PDF_PAGE").map((node) => node.id);
-    const nextPdfOrder = nodeIds.filter((nodeId) => byId.get(nodeId)?.type === "PDF_PAGE");
-    if (previousPdfOrder.some((nodeId, index) => nextPdfOrder[index] !== nodeId)) {
-      throw new BadRequestException("Die Reihenfolge der PDF-Seiten darf nicht verändert werden");
-    }
-
     await this.prisma.$transaction(async (tx) => {
       for (let index = 0; index < nodeIds.length; index += 1) {
         await tx.presentationNode.update({ where: { id: nodeIds[index]! }, data: { position: -(index + 1) } });

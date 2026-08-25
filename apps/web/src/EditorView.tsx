@@ -79,6 +79,7 @@ export default function EditorView() {
   const [presentation, setPresentation] = useState<PresentationDetails | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draggedId, setDraggedId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<{ id: string; position: "before" | "after" } | null>(null);
   const [insertMenuIndex, setInsertMenuIndex] = useState<number | null>(null);
   const [question, setQuestion] = useState("");
   const [options, setOptions] = useState<string[]>([]);
@@ -180,17 +181,25 @@ export default function EditorView() {
     await load(nextId);
   }
 
-  async function dropBefore(targetId: string) {
+  async function dropAt(targetId: string, position: "before" | "after") {
     if (!presentation || !draggedId || draggedId === targetId) return;
     const nodes = [...presentation.nodes];
     const sourceIndex = nodes.findIndex((node) => node.id === draggedId);
-    const targetIndex = nodes.findIndex((node) => node.id === targetId);
-    if (sourceIndex < 0 || targetIndex < 0) return;
+    if (sourceIndex < 0) return;
     const [moved] = nodes.splice(sourceIndex, 1);
     if (!moved) return;
-    nodes.splice(sourceIndex < targetIndex ? targetIndex - 1 : targetIndex, 0, moved);
+    const targetIndex = nodes.findIndex((node) => node.id === targetId);
+    if (targetIndex < 0) return;
+    nodes.splice(targetIndex + (position === "after" ? 1 : 0), 0, moved);
     setDraggedId(null);
-    setPresentation(await api.reorderNodes(presentationId, nodes.map((node) => node.id)));
+    setDropTarget(null);
+    try {
+      setPresentation(await api.reorderNodes(presentationId, nodes.map((node) => node.id)));
+      setError("");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Reihenfolge konnte nicht gespeichert werden");
+      await load();
+    }
   }
 
   async function start() {
@@ -219,15 +228,16 @@ export default function EditorView() {
           {presentation.nodes.map((node, index) => (
             <div className="node-stack" key={node.id}>
               <button
-                className={node.id === selectedId ? "node-card selected" : "node-card"}
+                className={["node-card", node.id === selectedId ? "selected" : "", node.id === draggedId ? "dragging" : "", dropTarget?.id === node.id ? `drop-${dropTarget.position}` : ""].filter(Boolean).join(" ")}
                 onClick={() => setSelectedId(node.id)}
-                draggable={node.type !== "PDF_PAGE"}
-                onDragStart={() => node.type !== "PDF_PAGE" && setDraggedId(node.id)}
-                onDragOver={(event) => event.preventDefault()}
-                onDrop={() => void dropBefore(node.id)}
+                draggable
+                onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", node.id); setDraggedId(node.id); }}
+                onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; const bounds = event.currentTarget.getBoundingClientRect(); setDropTarget({ id: node.id, position: event.clientY < bounds.top + bounds.height / 2 ? "before" : "after" }); }}
+                onDrop={(event) => { event.preventDefault(); if (dropTarget?.id === node.id) void dropAt(node.id, dropTarget.position); }}
+                onDragEnd={() => { setDraggedId(null); setDropTarget(null); }}
               >
                 <span className="node-index">{index + 1}</span>
-                {node.type !== "PDF_PAGE" && <GripVertical className="drag-handle" size={15} />}
+                <GripVertical className="drag-handle" size={15} />
                 <NodeThumb node={node} />
                 <span className={node.type === "PDF_PAGE" ? "node-kind pdf" : node.type === "RATING" ? "node-kind rating" : node.config.assessmentMode === "QUIZ" ? "node-kind quiz" : "node-kind poll"}>{node.type === "PDF_PAGE" ? `PDF ${node.sourcePageNumber}` : node.type === "RATING" ? "SKALA" : node.config.assessmentMode === "QUIZ" ? "QUIZ" : "UMFRAGE"}</span>
               </button>
@@ -250,7 +260,7 @@ export default function EditorView() {
       <aside className="properties-panel">
         <div className="panel-heading"><span>EIGENSCHAFTEN</span><strong>{selected?.type === "PDF_PAGE" ? "PDF-Seite" : selected?.type === "RATING" ? "Skala" : assessmentMode === "QUIZ" ? "Single Choice Quiz" : "Single Choice"}</strong></div>
         {selected?.type === "PDF_PAGE" ? (
-          <div className="pdf-properties"><FileText size={28} /><h3>Seite {selected.sourcePageNumber}</h3><p>{selected.config.originalName}</p><dl><div><dt>Typ</dt><dd>PDF</dd></div><div><dt>Position</dt><dd>{selected.position + 1}</dd></div></dl><p className="property-hint">PDF-Seiten bleiben in ihrer ursprünglichen Reihenfolge. Interaktionen können dazwischen verschoben werden.</p></div>
+          <div className="pdf-properties"><FileText size={28} /><h3>Seite {selected.sourcePageNumber}</h3><p>{selected.config.originalName}</p><dl><div><dt>Typ</dt><dd>PDF</dd></div><div><dt>Position</dt><dd>{selected.position + 1}</dd></div></dl><p className="property-hint">Ziehen Sie diese Seite im Ablauf nach oben oder unten, um ihre Position zu ändern.</p></div>
         ) : selected?.type === "RATING" ? (
           <div className="poll-properties rating-properties">
             <label>Frage<textarea value={question} onChange={(event) => { setQuestion(event.target.value); setDirty(true); }} rows={4} /></label>
