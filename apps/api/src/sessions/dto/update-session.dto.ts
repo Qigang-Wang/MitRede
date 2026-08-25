@@ -1,4 +1,4 @@
-import { IsBoolean, IsIn, IsOptional } from "class-validator";
+import { IsBoolean, IsIn, IsOptional, IsString } from "class-validator";
 
 export class UpdateSessionDto {
   @IsOptional()
@@ -8,5 +8,8 @@ export class UpdateSessionDto {
   @IsOptional()
   @IsBoolean()
   resultsVisible?: boolean;
-}
 
+  @IsOptional()
+  @IsString()
+  currentNodeId?: string;
+}

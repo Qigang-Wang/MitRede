@@ -15,9 +15,28 @@ export type PresentationSummary = {
 };
 
 export type PollConfig = {
-  question: string;
-  options: string[];
+  question?: string;
+  options?: string[];
   maxSelections?: number;
+  objectKey?: string;
+  originalName?: string;
+  pageNumber?: number;
+};
+
+export type PresentationNode = {
+  id: string;
+  presentationId?: string;
+  position: number;
+  type: "PDF_PAGE" | "MULTIPLE_CHOICE" | "RATING" | "WORD_CLOUD" | "OPEN_QUESTION" | "AI_SUMMARY";
+  config: PollConfig;
+  sourcePageNumber: number | null;
+};
+
+export type PresentationDetails = {
+  id: string;
+  title: string;
+  revision: number;
+  nodes: PresentationNode[];
 };
 
 export type SessionSnapshot = {
@@ -28,7 +47,8 @@ export type SessionSnapshot = {
   resultsVisible: boolean;
   stateVersion: number;
   presentation: { id: string; title: string };
-  currentNode: { id: string; type: string; config: PollConfig } | null;
+  currentNode: PresentationNode | null;
+  timeline?: PresentationNode[];
   results: { total: number; counts: number[] };
 };
 
@@ -44,6 +64,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   listPresentations: () => request<PresentationSummary[]>("/presentations"),
+  presentation: (id: string) => request<PresentationDetails>(`/presentations/${id}`),
   createPresentation: (title: string, file: File) => {
     const form = new FormData();
     form.append("title", title);
@@ -67,14 +88,40 @@ export const api = {
     }),
   updateSession: (
     sessionId: string,
-    body: { interactionStatus?: SessionSnapshot["interactionStatus"]; resultsVisible?: boolean },
+    body: { interactionStatus?: SessionSnapshot["interactionStatus"]; resultsVisible?: boolean; currentNodeId?: string },
   ) =>
     request<SessionSnapshot>(`/sessions/${sessionId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     }),
+  addPoll: (presentationId: string, question = "Neue Frage", options = ["Option 1", "Option 2"]) =>
+    request<PresentationNode>(`/presentations/${presentationId}/polls`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question, options }),
+    }),
+  updatePoll: (presentationId: string, nodeId: string, question: string, options: string[]) =>
+    request<PresentationNode>(`/presentations/${presentationId}/nodes/${nodeId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question, options }),
+    }),
+  duplicateNode: (presentationId: string, nodeId: string) =>
+    request<PresentationNode>(`/presentations/${presentationId}/nodes/${nodeId}/duplicate`, { method: "POST" }),
+  deleteNode: (presentationId: string, nodeId: string) =>
+    request<{ deleted: boolean }>(`/presentations/${presentationId}/nodes/${nodeId}`, { method: "DELETE" }),
+  reorderNodes: (presentationId: string, nodeIds: string[]) =>
+    request<PresentationDetails>(`/presentations/${presentationId}/nodes/order`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nodeIds }),
+    }),
 };
+
+export function pdfAssetUrl(objectKey: string) {
+  return `${API_URL}/assets/pdfs/${encodeURIComponent(objectKey)}`;
+}
 
 export function connectToSession(
   sessionId: string,
@@ -90,4 +137,3 @@ export function connectToSession(
   socket.on("session:event", onChange);
   return socket;
 }
-

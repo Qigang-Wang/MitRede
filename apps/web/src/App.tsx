@@ -7,6 +7,7 @@ import {
   ChevronRight,
   CircleHelp,
   Clock3,
+  FileText,
   Fullscreen,
   LayoutDashboard,
   Lock,
@@ -30,10 +31,13 @@ import {
   type PresentationSummary,
   type SessionSnapshot,
 } from "./api";
+import EditorView from "./EditorView";
+import { PdfPageCanvas } from "./PdfPage";
 
-type Route = "dashboard" | "present" | "join";
+type Route = "dashboard" | "editor" | "present" | "join";
 
 function currentRoute(): Route {
+  if (/^\/app\/presentations\/[^/]+\/edit/.test(window.location.pathname)) return "editor";
   if (window.location.pathname.startsWith("/present/")) return "present";
   if (window.location.pathname.startsWith("/join/")) return "join";
   return "dashboard";
@@ -184,7 +188,7 @@ function Dashboard() {
                 <article className="presentation-card" key={presentationItem.id}>
                   <div className={`card-preview ${tone}`}><span className="preview-kicker">MITREDE · INTERN</span><Icon size={42} strokeWidth={1.4} /><strong>{presentationItem.title}</strong><span className="slide-number">{presentationItem.pageCount + presentationItem.interactionCount} Knoten</span></div>
                   <div className="card-body"><div><h3>{presentationItem.title}</h3><p>{presentationItem.pageCount} PDF-Seiten · {presentationItem.interactionCount} Interaktionen</p></div><button className="icon-button" aria-label={`${presentationItem.title} Optionen`}><MoreHorizontal size={20} /></button></div>
-                  <div className="card-foot"><span><Clock3 size={14} /> {new Date(presentationItem.updatedAt).toLocaleDateString("de-DE")}</span><button className="start-button" disabled={startingId === presentationItem.id} onClick={() => void start(presentationItem.id)}><Play size={14} fill="currentColor" /> {startingId === presentationItem.id ? "Startet…" : "Starten"}</button></div>
+                  <div className="card-foot"><span><Clock3 size={14} /> {new Date(presentationItem.updatedAt).toLocaleDateString("de-DE")}</span><div className="card-actions"><button className="edit-button" onClick={() => navigate(`/app/presentations/${presentationItem.id}/edit`)}>Bearbeiten</button><button className="start-button" disabled={startingId === presentationItem.id} onClick={() => void start(presentationItem.id)}><Play size={14} fill="currentColor" /> {startingId === presentationItem.id ? "Startet…" : "Starten"}</button></div></div>
                 </article>
               );
             })}
@@ -219,7 +223,7 @@ function PresenterView() {
     return () => { socket.disconnect(); };
   }, [load, sessionId]);
 
-  async function update(body: { interactionStatus?: SessionSnapshot["interactionStatus"]; resultsVisible?: boolean }) {
+  async function update(body: { interactionStatus?: SessionSnapshot["interactionStatus"]; resultsVisible?: boolean; currentNodeId?: string }) {
     try { setSnapshot(await api.updateSession(sessionId, body)); }
     catch (caught) { setError(caught instanceof Error ? caught.message : "Status konnte nicht geändert werden"); }
   }
@@ -227,15 +231,20 @@ function PresenterView() {
   if (!snapshot) return <LoadingScreen message={error || "Live-Sitzung wird geladen…"} />;
   const poll = snapshot.currentNode?.config;
   const total = snapshot.results.total;
+  const timeline = snapshot.timeline ?? [];
+  const currentIndex = timeline.findIndex((node) => node.id === snapshot.currentNode?.id);
+  const isPdf = snapshot.currentNode?.type === "PDF_PAGE";
+
+  function move(offset: number) {
+    const next = timeline[currentIndex + offset];
+    if (next) void update({ currentNodeId: next.id });
+  }
 
   return (
     <div className="presenter-shell">
       <header className="presenter-topbar"><button className="icon-button dark" onClick={() => navigate("/app")} aria-label="Zurück"><X size={21} /></button><div><strong>{snapshot.presentation.title}</strong><span className="live-badge"><i /> LIVE</span></div><div className="presenter-meta"><Users size={18} /> {total} Antworten <button className="room-code" onClick={() => navigate(`/join/${snapshot.roomCode}`)} title="Teilnahmeansicht öffnen"><QrCode size={18} /> {snapshot.roomCode.slice(0, 3)} {snapshot.roomCode.slice(3)}</button></div></header>
-      <main className="stage-wrap"><div className="stage"><p className="stage-kicker">LIVE-UMFRAGE</p><h1>{poll?.question ?? "Keine aktuelle Frage"}</h1><p className="stage-subtitle">Eine Antwort auswählen</p>
-        {snapshot.resultsVisible ? <div className="result-list">{(poll?.options ?? []).map((label, index) => { const count = snapshot.results.counts[index] ?? 0; const percentage = total ? Math.round(count / total * 100) : 0; return <div className="result-row" key={label}><span className="result-letter">{String.fromCharCode(65 + index)}</span><div><div className="result-label"><strong>{label}</strong><span>{count} Stimmen · {percentage}%</span></div><div className="result-track"><span style={{ width: `${percentage}%` }} /></div></div></div>; })}</div> : <div className="results-hidden"><BarChart3 size={34} /><strong>Ergebnisse verborgen</strong><span>Die Stimmen werden weiterhin gesammelt.</span></div>}
-        <p className="answer-count"><Check size={16} /> {total} Antworten eingegangen</p>
-      </div></main>
-      <footer className="presenter-controls"><div className="page-controls"><button disabled><ArrowLeft size={19} /></button><span>Live</span><button disabled><ArrowRight size={19} /></button></div><div className="moderation-controls"><button className={snapshot.interactionStatus === "ACCEPTING" ? "control active" : "control"} onClick={() => void update({ interactionStatus: snapshot.interactionStatus === "ACCEPTING" ? "LOCKED" : "ACCEPTING" })}>{snapshot.interactionStatus === "ACCEPTING" ? <Radio size={18} /> : <Lock size={18} />}{snapshot.interactionStatus === "ACCEPTING" ? "Antworten offen" : "Antworten gesperrt"}</button><button className={snapshot.resultsVisible ? "control active" : "control"} onClick={() => void update({ resultsVisible: !snapshot.resultsVisible })}><BarChart3 size={18} /> {snapshot.resultsVisible ? "Ergebnisse sichtbar" : "Ergebnisse verborgen"}</button></div><button className="control" onClick={() => document.documentElement.requestFullscreen?.()}><Fullscreen size={18} /></button></footer>
+      <main className="stage-wrap">{isPdf && poll?.objectKey && poll.pageNumber ? <div className="presented-pdf"><PdfPageCanvas objectKey={poll.objectKey} pageNumber={poll.pageNumber} /></div> : <div className="stage"><p className="stage-kicker">LIVE-UMFRAGE</p><h1>{poll?.question ?? "Keine aktuelle Frage"}</h1><p className="stage-subtitle">Eine Antwort auswählen</p>{snapshot.resultsVisible ? <div className="result-list">{(poll?.options ?? []).map((label, index) => { const count = snapshot.results.counts[index] ?? 0; const percentage = total ? Math.round(count / total * 100) : 0; return <div className="result-row" key={label}><span className="result-letter">{String.fromCharCode(65 + index)}</span><div><div className="result-label"><strong>{label}</strong><span>{count} Stimmen · {percentage}%</span></div><div className="result-track"><span style={{ width: `${percentage}%` }} /></div></div></div>; })}</div> : <div className="results-hidden"><BarChart3 size={34} /><strong>Ergebnisse verborgen</strong><span>Die Stimmen werden weiterhin gesammelt.</span></div>}<p className="answer-count"><Check size={16} /> {total} Antworten eingegangen</p></div>}</main>
+      <footer className="presenter-controls"><div className="page-controls"><button disabled={currentIndex <= 0} onClick={() => move(-1)}><ArrowLeft size={19} /></button><span>{currentIndex + 1} / {timeline.length}</span><button disabled={currentIndex < 0 || currentIndex >= timeline.length - 1} onClick={() => move(1)}><ArrowRight size={19} /></button></div><div className="moderation-controls">{isPdf ? <span className="pdf-live-label"><FileText size={17} /> PDF-Seite {snapshot.currentNode?.sourcePageNumber}</span> : <><button className={snapshot.interactionStatus === "ACCEPTING" ? "control active" : "control"} onClick={() => void update({ interactionStatus: snapshot.interactionStatus === "ACCEPTING" ? "LOCKED" : "ACCEPTING" })}>{snapshot.interactionStatus === "ACCEPTING" ? <Radio size={18} /> : <Lock size={18} />}{snapshot.interactionStatus === "ACCEPTING" ? "Antworten offen" : "Antworten gesperrt"}</button><button className={snapshot.resultsVisible ? "control active" : "control"} onClick={() => void update({ resultsVisible: !snapshot.resultsVisible })}><BarChart3 size={18} /> {snapshot.resultsVisible ? "Ergebnisse sichtbar" : "Ergebnisse verborgen"}</button></>}</div><button className="control" onClick={() => document.documentElement.requestFullscreen?.()}><Fullscreen size={18} /></button></footer>
     </div>
   );
 }
@@ -283,15 +292,17 @@ function JoinView() {
   if (!snapshot) return <LoadingScreen message={error || "Raum wird geöffnet…"} />;
   const options = snapshot.currentNode?.config.options ?? [];
   const accepting = snapshot.interactionStatus === "ACCEPTING";
+  const waitingForPresentation = snapshot.currentNode?.type === "PDF_PAGE";
 
   return (
-    <div className="join-shell"><header className="join-topbar"><Brand /><span><i /> Verbunden</span></header><main className="join-card"><p className="eyebrow">LIVE-UMFRAGE · RAUM {snapshot.roomCode}</p><h1>{snapshot.currentNode?.config.question ?? "Warten auf die nächste Frage"}</h1><p>{accepting ? "Wählen Sie eine Antwort." : "Diese Frage ist derzeit gesperrt."}</p><div className="join-options">{options.map((option, index) => <button className={selected === index ? "join-option selected" : "join-option"} key={option} disabled={!accepting} onClick={() => { setSelected(index); setSubmitted(false); }}><span>{String.fromCharCode(65 + index)}</span>{option}{selected === index && <Check size={20} />}</button>)}</div><button className="btn btn-primary submit-answer" disabled={!accepting || selected === null || sending} onClick={() => void submit()}>{submitted ? <><Check size={19} /> Antwort gespeichert</> : sending ? "Wird gespeichert…" : "Antwort senden"}</button>{error && <p className="form-error">{error}</p>}<p className="privacy-note">Ihre Teilnahme ist anonym. Sie können Ihre Antwort ändern, solange die Umfrage geöffnet ist.</p></main><footer className="join-footer">Raum <strong>{snapshot.roomCode.slice(0, 3)} {snapshot.roomCode.slice(3)}</strong><span>·</span> {snapshot.presentation.title}</footer></div>
+    <div className="join-shell"><header className="join-topbar"><Brand /><span><i /> Verbunden</span></header><main className={waitingForPresentation ? "join-card join-wait" : "join-card"}>{waitingForPresentation ? <><FileText size={42} /><p className="eyebrow">PRÄSENTATION LÄUFT</p><h1>Bitte schauen Sie auf die Leinwand.</h1><p>Die nächste Interaktion erscheint automatisch auf diesem Gerät.</p></> : <><p className="eyebrow">LIVE-UMFRAGE · RAUM {snapshot.roomCode}</p><h1>{snapshot.currentNode?.config.question ?? "Warten auf die nächste Frage"}</h1><p>{accepting ? "Wählen Sie eine Antwort." : "Diese Frage ist derzeit gesperrt."}</p><div className="join-options">{options.map((option, index) => <button className={selected === index ? "join-option selected" : "join-option"} key={option} disabled={!accepting} onClick={() => { setSelected(index); setSubmitted(false); }}><span>{String.fromCharCode(65 + index)}</span>{option}{selected === index && <Check size={20} />}</button>)}</div><button className="btn btn-primary submit-answer" disabled={!accepting || selected === null || sending} onClick={() => void submit()}>{submitted ? <><Check size={19} /> Antwort gespeichert</> : sending ? "Wird gespeichert…" : "Antwort senden"}</button>{snapshot.resultsVisible && <div className="mobile-results"><strong>Live-Ergebnis</strong>{options.map((option, index) => { const count = snapshot.results.counts[index] ?? 0; const percentage = snapshot.results.total ? Math.round(count / snapshot.results.total * 100) : 0; return <div key={option}><span>{option}</span><i><b style={{ width: `${percentage}%` }} /></i><small>{percentage}%</small></div>; })}</div>}{error && <p className="form-error">{error}</p>}<p className="privacy-note">Ihre Teilnahme ist anonym. Sie können Ihre Antwort ändern, solange die Umfrage geöffnet ist.</p></>}</main><footer className="join-footer">Raum <strong>{snapshot.roomCode.slice(0, 3)} {snapshot.roomCode.slice(3)}</strong><span>·</span> {snapshot.presentation.title}</footer></div>
   );
 }
 
 export default function App() {
   const [route, setRoute] = useState<Route>(currentRoute);
   useEffect(() => { const updateRoute = () => setRoute(currentRoute()); window.addEventListener("popstate", updateRoute); return () => window.removeEventListener("popstate", updateRoute); }, []);
+  if (route === "editor") return <EditorView />;
   if (route === "present") return <PresenterView />;
   if (route === "join") return <JoinView />;
   return <Dashboard />;

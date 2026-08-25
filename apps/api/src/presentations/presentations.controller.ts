@@ -2,8 +2,10 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Param,
+  Patch,
   Post,
   UploadedFile,
   UseInterceptors,
@@ -12,6 +14,7 @@ import { FileInterceptor } from "@nestjs/platform-express";
 import { ApiBody, ApiConsumes, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { CreatePollDto } from "./dto/create-poll.dto";
 import { CreatePresentationDto } from "./dto/create-presentation.dto";
+import { ReorderNodesDto } from "./dto/reorder-nodes.dto";
 import { PresentationsService } from "./presentations.service";
 
 @ApiTags("presentations")
@@ -58,5 +61,32 @@ export class PresentationsController {
   addPoll(@Param("id") id: string, @Body() body: CreatePollDto) {
     return this.presentations.addPoll(id, body);
   }
-}
 
+  @Patch(":id/nodes/order")
+  @ApiOperation({ summary: "Sortiert die Knoten einer Präsentation" })
+  reorder(@Param("id") id: string, @Body() body: ReorderNodesDto) {
+    return this.presentations.reorder(id, body.nodeIds);
+  }
+
+  @Patch(":id/nodes/:nodeId")
+  @ApiOperation({ summary: "Aktualisiert eine Single-Choice-Frage" })
+  updatePoll(
+    @Param("id") id: string,
+    @Param("nodeId") nodeId: string,
+    @Body() body: CreatePollDto,
+  ) {
+    return this.presentations.updatePoll(id, nodeId, body);
+  }
+
+  @Post(":id/nodes/:nodeId/duplicate")
+  @ApiOperation({ summary: "Dupliziert eine Interaktionsseite" })
+  duplicate(@Param("id") id: string, @Param("nodeId") nodeId: string) {
+    return this.presentations.duplicate(id, nodeId);
+  }
+
+  @Delete(":id/nodes/:nodeId")
+  @ApiOperation({ summary: "Löscht eine Interaktionsseite" })
+  remove(@Param("id") id: string, @Param("nodeId") nodeId: string) {
+    return this.presentations.remove(id, nodeId);
+  }
+}

@@ -8,10 +8,11 @@ Browser; Teilnehmende machen anonym per QR-Code oder Raumcode mit.
 
 ## Aktueller Stand
 
-Version `0.2.0` enthält einen durchgängigen MVP-Funktionsweg für die drei
+Version `0.3.0` enthält einen durchgängigen MVP-Funktionsweg für die drei
 Kernbereiche:
 
 - `/app` – Präsentationen verwalten
+- `/app/presentations/:id/edit` – PDF-Seiten und Interaktionen bearbeiten
 - `/present/:sessionId` – moderieren und Ergebnisse zeigen
 - `/join/:roomCode` – auf dem Smartphone abstimmen
 
@@ -19,6 +20,11 @@ Präsentationen und Antworten werden in PostgreSQL gespeichert. PDF-Dateien
 werden validiert, lokal abgelegt und nach Seiten erfasst. Neue Live-Sitzungen
 erhalten einen sechsstelligen Raumcode; anonyme Antworten erscheinen per
 Socket.IO unmittelbar in der Moderationsansicht.
+
+Im visuellen Editor werden echte PDF-Seiten dargestellt. Single-Choice-Seiten
+können zwischen PDF-Seiten eingefügt, per Drag-and-drop verschoben, dupliziert,
+gelöscht und automatisch gespeichert werden. Der Präsentationsmodus folgt
+anschließend genau dieser Reihenfolge.
 
 ## Voraussetzungen
 
@@ -79,9 +85,9 @@ PDF hochladen → Seiten erfassen → Single-Choice-Frage anlegen
 → Sitzung starten → anonym beitreten → abstimmen → Live-Ergebnis zeigen
 ```
 
-Die erste Frage wird beim Upload als Vorlage angelegt. Als
-nächster Ausbau folgen PDF-Seitenbilder im Präsentationsmodus, ein visueller
-Knoten-Editor und die freie Bearbeitung von Fragen und Antwortoptionen.
+Die erste Frage wird beim Upload als Vorlage angelegt und kann anschließend im
+Editor angepasst werden. Als nächster Ausbau folgen weitere Fragetypen,
+Präsentationsnotizen und die Bearbeitung des Präsentationstitels.
 
 Ausführliche Anforderungen und technische Entscheidungen stehen im Verzeichnis
 [`Codex`](./Codex/README.md).

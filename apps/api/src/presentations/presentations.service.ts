@@ -143,18 +143,127 @@ export class PresentationsService {
       where: { presentationId: id },
       _max: { position: true },
     });
-    return this.prisma.presentationNode.create({
-      data: {
-        presentationId: id,
-        position: (aggregate._max.position ?? -1) + 1,
-        type: "MULTIPLE_CHOICE",
-        config: {
-          question: body.question.trim(),
-          options: body.options.map((option) => option.trim()),
-          maxSelections: 1,
+    const node = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.presentationNode.create({
+        data: {
+          presentationId: id,
+          position: (aggregate._max.position ?? -1) + 1,
+          type: "MULTIPLE_CHOICE",
+          config: {
+            question: body.question.trim(),
+            options: body.options.map((option) => option.trim()),
+            maxSelections: 1,
+          },
         },
-      },
+      });
+      await tx.presentation.update({ where: { id }, data: { revision: { increment: 1 } } });
+      return created;
+    });
+    return node;
+  }
+
+  async updatePoll(id: string, nodeId: string, body: CreatePollDto) {
+    const node = await this.prisma.presentationNode.findFirst({
+      where: { id: nodeId, presentationId: id },
+    });
+    if (!node) throw new NotFoundException("Interaktionsseite nicht gefunden");
+    if (node.type !== "MULTIPLE_CHOICE") {
+      throw new BadRequestException("PDF-Seiten können nicht als Frage bearbeitet werden");
+    }
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.presentationNode.update({
+        where: { id: nodeId },
+        data: {
+          config: {
+            question: body.question.trim(),
+            options: body.options.map((option) => option.trim()),
+            maxSelections: 1,
+          },
+        },
+      });
+      await tx.presentation.update({ where: { id }, data: { revision: { increment: 1 } } });
+      return updated;
     });
   }
-}
 
+  async duplicate(id: string, nodeId: string) {
+    const node = await this.prisma.presentationNode.findFirst({
+      where: { id: nodeId, presentationId: id },
+    });
+    if (!node) throw new NotFoundException("Interaktionsseite nicht gefunden");
+    if (node.type === "PDF_PAGE") {
+      throw new BadRequestException("PDF-Seiten können nicht dupliziert werden");
+    }
+    const aggregate = await this.prisma.presentationNode.aggregate({
+      where: { presentationId: id },
+      _max: { position: true },
+    });
+    return this.prisma.$transaction(async (tx) => {
+      const created = await tx.presentationNode.create({
+        data: {
+          presentationId: id,
+          position: (aggregate._max.position ?? -1) + 1,
+          type: node.type,
+          config: node.config as Prisma.InputJsonValue,
+        },
+      });
+      await tx.presentation.update({ where: { id }, data: { revision: { increment: 1 } } });
+      return created;
+    });
+  }
+
+  async remove(id: string, nodeId: string) {
+    const node = await this.prisma.presentationNode.findFirst({
+      where: { id: nodeId, presentationId: id },
+    });
+    if (!node) throw new NotFoundException("Interaktionsseite nicht gefunden");
+    if (node.type === "PDF_PAGE") {
+      throw new BadRequestException("PDF-Seiten bleiben in der ersten Version erhalten");
+    }
+    await this.prisma.$transaction(async (tx) => {
+      await tx.presentationNode.delete({ where: { id: nodeId } });
+      const remaining = await tx.presentationNode.findMany({
+        where: { presentationId: id },
+        orderBy: { position: "asc" },
+      });
+      for (let index = 0; index < remaining.length; index += 1) {
+        await tx.presentationNode.update({ where: { id: remaining[index]!.id }, data: { position: -(index + 1) } });
+      }
+      for (let index = 0; index < remaining.length; index += 1) {
+        await tx.presentationNode.update({ where: { id: remaining[index]!.id }, data: { position: index } });
+      }
+      await tx.presentation.update({ where: { id }, data: { revision: { increment: 1 } } });
+    });
+    return { deleted: true };
+  }
+
+  async reorder(id: string, nodeIds: string[]) {
+    const nodes = await this.prisma.presentationNode.findMany({
+      where: { presentationId: id },
+      orderBy: { position: "asc" },
+    });
+    if (nodes.length !== nodeIds.length || new Set(nodeIds).size !== nodes.length) {
+      throw new BadRequestException("Die Knotenliste ist unvollständig");
+    }
+    const byId = new Map(nodes.map((node) => [node.id, node]));
+    if (nodeIds.some((nodeId) => !byId.has(nodeId))) {
+      throw new BadRequestException("Die Knotenliste enthält fremde Einträge");
+    }
+    const previousPdfOrder = nodes.filter((node) => node.type === "PDF_PAGE").map((node) => node.id);
+    const nextPdfOrder = nodeIds.filter((nodeId) => byId.get(nodeId)?.type === "PDF_PAGE");
+    if (previousPdfOrder.some((nodeId, index) => nextPdfOrder[index] !== nodeId)) {
+      throw new BadRequestException("Die Reihenfolge der PDF-Seiten darf nicht verändert werden");
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      for (let index = 0; index < nodeIds.length; index += 1) {
+        await tx.presentationNode.update({ where: { id: nodeIds[index]! }, data: { position: -(index + 1) } });
+      }
+      for (let index = 0; index < nodeIds.length; index += 1) {
+        await tx.presentationNode.update({ where: { id: nodeIds[index]! }, data: { position: index } });
+      }
+      await tx.presentation.update({ where: { id }, data: { revision: { increment: 1 } } });
+    });
+    return this.get(id);
+  }
+}

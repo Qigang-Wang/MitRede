@@ -39,9 +39,7 @@ export class SessionsService {
       include: { nodes: { orderBy: { position: "asc" } }, owner: true },
     });
     if (!presentation) throw new NotFoundException("Präsentation nicht gefunden");
-    const currentNode =
-      presentation.nodes.find((node) => node.type === "MULTIPLE_CHOICE") ??
-      presentation.nodes[0];
+    const currentNode = presentation.nodes[0];
     if (!currentNode) throw new BadRequestException("Die Präsentation enthält keine Seiten");
 
     const session = await this.prisma.liveSession.create({
@@ -63,10 +61,13 @@ export class SessionsService {
   async snapshotById(id: string) {
     const session = await this.prisma.liveSession.findUnique({
       where: { id },
-      include: { presentation: true, currentNode: true },
+      include: {
+        presentation: { include: { nodes: { orderBy: { position: "asc" } } } },
+        currentNode: true,
+      },
     });
     if (!session) throw new NotFoundException("Sitzung nicht gefunden");
-    return this.buildSnapshot(session);
+    return this.buildSnapshot(session, true);
   }
 
   async snapshotByRoom(roomCode: string) {
@@ -75,7 +76,7 @@ export class SessionsService {
       include: { presentation: true, currentNode: true },
     });
     if (!session) throw new NotFoundException("Raum nicht gefunden");
-    return this.buildSnapshot(session);
+    return this.buildSnapshot(session, false);
   }
 
   private async buildSnapshot(session: {
@@ -86,9 +87,9 @@ export class SessionsService {
     resultsVisible: boolean;
     stateVersion: number;
     currentNodeId: string | null;
-    presentation: { id: string; title: string };
+    presentation: { id: string; title: string; nodes?: Array<{ id: string; position: number; type: string; config: Prisma.JsonValue; sourcePageNumber: number | null }> };
     currentNode: { id: string; type: string; config: Prisma.JsonValue } | null;
-  }) {
+  }, includeTimeline: boolean) {
     const answers = session.currentNodeId
       ? await this.prisma.answer.findMany({
           where: {
@@ -119,6 +120,7 @@ export class SessionsService {
       currentNode: session.currentNode
         ? { ...session.currentNode, config }
         : null,
+      timeline: includeTimeline ? (session.presentation.nodes ?? []) : undefined,
       results: { total: answers.length, counts },
     };
   }
@@ -177,11 +179,15 @@ export class SessionsService {
     });
 
     this.broadcast(session.id, updated.stateVersion, "session.results_changed");
-    return this.snapshotById(session.id);
+    return this.snapshotByRoom(session.roomCode);
   }
 
   async update(id: string, body: UpdateSessionDto) {
-    if (body.interactionStatus === undefined && body.resultsVisible === undefined) {
+    if (
+      body.interactionStatus === undefined &&
+      body.resultsVisible === undefined &&
+      body.currentNodeId === undefined
+    ) {
       throw new BadRequestException("Keine Änderung angegeben");
     }
     const data: Prisma.LiveSessionUpdateInput = {
@@ -191,6 +197,17 @@ export class SessionsService {
       data.interactionStatus = body.interactionStatus as InteractionStatus;
     }
     if (body.resultsVisible !== undefined) data.resultsVisible = body.resultsVisible;
+    if (body.currentNodeId !== undefined) {
+      const session = await this.prisma.liveSession.findUnique({ where: { id } });
+      if (!session) throw new NotFoundException("Sitzung nicht gefunden");
+      const node = await this.prisma.presentationNode.findFirst({
+        where: { id: body.currentNodeId, presentationId: session.presentationId },
+      });
+      if (!node) throw new BadRequestException("Seite gehört nicht zu dieser Präsentation");
+      data.currentNode = { connect: { id: node.id } };
+      data.interactionStatus = node.type === "MULTIPLE_CHOICE" ? "ACCEPTING" : "NOT_OPEN";
+      data.resultsVisible = false;
+    }
 
     const session = await this.prisma.liveSession.update({ where: { id }, data }).catch(() => null);
     if (!session) throw new NotFoundException("Sitzung nicht gefunden");
