@@ -5,14 +5,13 @@
     "moduleResolution": "Node",
     "outDir": "dist",
     "rootDir": "src",
-    "types": ["node", "jest"],
+    "types": ["node", "jest", "express", "multer"],
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
     "sourceMap": true,
-    "incremental": true,
+    "incremental": false,
     "noEmit": false
   },
   "include": ["src/**/*.ts"],
   "exclude": ["node_modules", "dist"]
 }
-

@@ -21,7 +21,7 @@ async function bootstrap() {
   const swaggerConfig = new DocumentBuilder()
     .setTitle("MitRede API")
     .setDescription("HTTP API für interaktive PDF-Präsentationen")
-    .setVersion("0.1.0")
+    .setVersion("0.2.0")
     .build();
   const document = SwaggerModule.createDocument(app, swaggerConfig);
   SwaggerModule.setup("api/docs", app, document);
@@ -31,4 +31,3 @@ async function bootstrap() {
 }
 
 void bootstrap();
-

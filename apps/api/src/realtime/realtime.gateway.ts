@@ -7,8 +7,10 @@ import {
   MessageBody,
   SubscribeMessage,
   WebSocketGateway,
+  WebSocketServer,
 } from "@nestjs/websockets";
-import type { Socket } from "socket.io";
+import { Server, type Socket } from "socket.io";
+import type { SessionEvent } from "@mitrede/contracts";
 
 type RealtimeSocket = Socket<
   ClientToServerEvents,
@@ -23,6 +25,9 @@ type RealtimeSocket = Socket<
   transports: ["websocket", "polling"],
 })
 export class RealtimeGateway {
+  @WebSocketServer()
+  private server!: Server<ClientToServerEvents, ServerToClientEvents>;
+
   @SubscribeMessage("session:join")
   joinSession(
     @MessageBody() data: { sessionId: string; knownVersion?: number },
@@ -32,5 +37,8 @@ export class RealtimeGateway {
     void client.join(`session:${data.sessionId}`);
     return { accepted: true };
   }
-}
 
+  emitSessionEvent(sessionId: string, event: SessionEvent) {
+    this.server.to(`session:${sessionId}`).emit("session:event", event);
+  }
+}

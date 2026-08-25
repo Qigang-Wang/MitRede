@@ -8,16 +8,17 @@ Browser; Teilnehmende machen anonym per QR-Code oder Raumcode mit.
 
 ## Aktueller Stand
 
-Version `0.1.0` enthält das technische Grundgerüst und einen interaktiven
-Oberflächen-Prototypen für die drei Kernbereiche:
+Version `0.2.0` enthält einen durchgängigen MVP-Funktionsweg für die drei
+Kernbereiche:
 
 - `/app` – Präsentationen verwalten
-- `/present/demo` – moderieren und Ergebnisse zeigen
-- `/join/483921` – auf dem Smartphone abstimmen
+- `/present/:sessionId` – moderieren und Ergebnisse zeigen
+- `/join/:roomCode` – auf dem Smartphone abstimmen
 
-Die Oberfläche arbeitet derzeit mit realistischen Beispieldaten. API,
-Echtzeitkanal, Datenmodell und Worker sind vorbereitet; die persistente
-PDF-Verarbeitung folgt im nächsten Umsetzungsschritt.
+Präsentationen und Antworten werden in PostgreSQL gespeichert. PDF-Dateien
+werden validiert, lokal abgelegt und nach Seiten erfasst. Neue Live-Sitzungen
+erhalten einen sechsstelligen Raumcode; anonyme Antworten erscheinen per
+Socket.IO unmittelbar in der Moderationsansicht.
 
 ## Voraussetzungen
 
@@ -69,15 +70,18 @@ pnpm test
 pnpm build
 ```
 
-## Nächster Meilenstein
+## Aktueller Funktionsweg
 
 Der erste durchgängige Funktionsweg ist:
 
 ```text
-PDF hochladen → Seiten verarbeiten → Single-Choice-Frage einfügen
-→ Sitzung starten → anonym beitreten → abstimmen → Ergebnis zeigen
+PDF hochladen → Seiten erfassen → Single-Choice-Frage anlegen
+→ Sitzung starten → anonym beitreten → abstimmen → Live-Ergebnis zeigen
 ```
+
+Die erste Frage wird beim Upload als Vorlage angelegt. Als
+nächster Ausbau folgen PDF-Seitenbilder im Präsentationsmodus, ein visueller
+Knoten-Editor und die freie Bearbeitung von Fragen und Antwortoptionen.
 
 Ausführliche Anforderungen und technische Entscheidungen stehen im Verzeichnis
 [`Codex`](./Codex/README.md).
-
