@@ -240,9 +240,9 @@ export default function PreviewView() {
       <main className={phoneVisible ? "preview-workspace" : "preview-workspace phone-hidden"}>
         <section className="preview-projector-column">
           <div className="preview-column-heading"><span>PROJEKTIONSANSICHT</span><small>{isPdf ? `PDF · Seite ${currentNode?.sourcePageNumber}` : status === "ACCEPTING" ? "Antworten offen" : status === "LOCKED" ? "Antworten gesperrt" : "Noch nicht geöffnet"}</small></div>
-          <div className="preview-projector" ref={projectorRef}>
+          <div className={`preview-projector${isPdf ? " is-pdf" : ""}`} ref={projectorRef}>
             {isPdf && currentNode?.config.objectKey && currentNode.config.pageNumber ? (
-              <div className="preview-projector-pdf"><PdfPageCanvas objectKey={currentNode.config.objectKey} pageNumber={currentNode.config.pageNumber} /></div>
+              <div className="preview-projector-pdf"><PdfPageCanvas objectKey={currentNode.config.objectKey} pageNumber={currentNode.config.pageNumber} fitContainer /></div>
             ) : (
               <div className="preview-projector-poll">
                 <p className="stage-kicker">{isRating ? "LIVE-SKALA" : isQuiz ? "WISSENSFRAGE" : "LIVE-UMFRAGE"}</p>
