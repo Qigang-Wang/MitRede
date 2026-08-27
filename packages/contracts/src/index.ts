@@ -17,6 +17,12 @@ export const interactionStatusSchema = z.enum([
 export const nodeTypeSchema = z.enum([
   "PDF_PAGE",
   "JOIN_PAGE",
+  "CONTENT_PAGE",
+  "FREEFORM_PAGE",
+  "GROUP_PAGE",
+  "GROUP_DISCUSSION",
+  "GROUP_PRESENTATION",
+  "PRIORITY_VOTE",
   "MULTIPLE_CHOICE",
   "RATING",
   "WORD_CLOUD",

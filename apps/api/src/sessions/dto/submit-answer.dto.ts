@@ -1,4 +1,4 @@
-import { IsInt, IsString, IsUUID, Max, Min, MinLength } from "class-validator";
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsInt, IsOptional, IsString, IsUUID, Max, Min, MinLength } from "class-validator";
 
 export class SubmitAnswerDto {
   @IsString()
@@ -11,9 +11,18 @@ export class SubmitAnswerDto {
   @IsUUID()
   requestId!: string;
 
+  @IsOptional()
   @IsInt()
   @Min(0)
-  @Max(20)
-  optionIndex!: number;
-}
+  @Max(100)
+  optionIndex?: number;
 
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(6)
+  @IsInt({ each: true })
+  @Min(0, { each: true })
+  @Max(100, { each: true })
+  scaleValues?: number[];
+}

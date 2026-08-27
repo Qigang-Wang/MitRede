@@ -1,0 +1,2 @@
+ALTER TABLE "User" ADD COLUMN "publicBaseUrl" TEXT;
+ALTER TABLE "LiveSession" ADD COLUMN "isPreview" BOOLEAN NOT NULL DEFAULT false;

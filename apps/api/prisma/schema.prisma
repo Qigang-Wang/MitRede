@@ -21,6 +21,12 @@ enum PresentationStatus {
 enum NodeType {
   PDF_PAGE
   JOIN_PAGE
+  CONTENT_PAGE
+  FREEFORM_PAGE
+  GROUP_PAGE
+  GROUP_DISCUSSION
+  GROUP_PRESENTATION
+  PRIORITY_VOTE
   MULTIPLE_CHOICE
   RATING
   WORD_CLOUD
@@ -43,96 +49,117 @@ enum InteractionStatus {
 }
 
 model User {
-  id                   String         @id @default(cuid())
-  email                String         @unique
-  displayName          String
-  role                 UserRole       @default(USER)
-  presentations        Presentation[]
-  controlledSessions   LiveSession[]  @relation("SessionController")
-  createdAt            DateTime       @default(now())
-  updatedAt            DateTime       @updatedAt
+  id                 String         @id @default(cuid())
+  email              String         @unique
+  displayName        String
+  publicBaseUrl      String?
+  role               UserRole       @default(USER)
+  passwordHash       String?
+  authSessions       AuthSession[]
+  presentations      Presentation[]
+  controlledSessions LiveSession[]  @relation("SessionController")
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+}
+
+model AuthSession {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String   @unique
+  expiresAt  DateTime
+  lastSeenAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+
+  @@index([userId, expiresAt])
 }
 
 model Presentation {
-  id          String              @id @default(cuid())
-  ownerId     String
-  owner       User                @relation(fields: [ownerId], references: [id], onDelete: Restrict)
-  title       String
-  status      PresentationStatus  @default(DRAFT)
-  revision    Int                 @default(1)
-  nodes       PresentationNode[]
-  sessions    LiveSession[]
-  createdAt   DateTime            @default(now())
-  updatedAt   DateTime            @updatedAt
+  id        String             @id @default(cuid())
+  ownerId   String
+  owner     User               @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  title     String
+  status    PresentationStatus @default(DRAFT)
+  revision  Int                @default(1)
+  nodes     PresentationNode[]
+  sessions  LiveSession[]
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
 
   @@index([ownerId, updatedAt])
 }
 
 model PresentationNode {
-  id               String         @id @default(cuid())
+  id               String        @id @default(cuid())
   presentationId   String
-  presentation     Presentation   @relation(fields: [presentationId], references: [id], onDelete: Cascade)
+  presentation     Presentation  @relation(fields: [presentationId], references: [id], onDelete: Cascade)
   position         Int
   type             NodeType
   config           Json
   sourcePageNumber Int?
-  activeSessions   LiveSession[]  @relation("CurrentNode")
+  activeSessions   LiveSession[] @relation("CurrentNode")
   answers          Answer[]
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
 
   @@unique([presentationId, position])
 }
 
 model LiveSession {
-  id                 String               @id @default(cuid())
-  presentationId     String
-  presentation       Presentation         @relation(fields: [presentationId], references: [id], onDelete: Restrict)
-  roomCode           String               @unique
-  status             SessionStatus        @default(DRAFT)
-  currentNodeId      String?
-  currentNode        PresentationNode?    @relation("CurrentNode", fields: [currentNodeId], references: [id], onDelete: SetNull)
-  interactionStatus  InteractionStatus    @default(NOT_OPEN)
-  resultsVisible     Boolean              @default(false)
-  stateVersion       Int                  @default(0)
-  controllerUserId   String?
-  controller         User?                @relation("SessionController", fields: [controllerUserId], references: [id], onDelete: SetNull)
-  participants       ParticipantSession[]
-  answers            Answer[]
-  startedAt          DateTime?
-  endedAt            DateTime?
-  expiresAt          DateTime?
-  createdAt          DateTime             @default(now())
-  updatedAt          DateTime             @updatedAt
+  id                String               @id @default(cuid())
+  presentationId    String
+  presentation      Presentation         @relation(fields: [presentationId], references: [id], onDelete: Restrict)
+  roomCode          String               @unique
+  isPreview         Boolean              @default(false)
+  status            SessionStatus        @default(DRAFT)
+  currentNodeId     String?
+  currentNode       PresentationNode?    @relation("CurrentNode", fields: [currentNodeId], references: [id], onDelete: SetNull)
+  interactionStatus InteractionStatus    @default(NOT_OPEN)
+  resultsVisible    Boolean              @default(false)
+  timerStartedAt    DateTime?
+  timerRemainingSec Int?
+  timerRunning      Boolean              @default(false)
+  activeGroupIndex  Int                  @default(0)
+  stateVersion      Int                  @default(0)
+  controllerUserId  String?
+  controller        User?                @relation("SessionController", fields: [controllerUserId], references: [id], onDelete: SetNull)
+  participants      ParticipantSession[]
+  answers           Answer[]
+  startedAt         DateTime?
+  endedAt           DateTime?
+  expiresAt         DateTime?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
 
   @@index([presentationId, createdAt])
 }
 
 model ParticipantSession {
-  id                 String       @id @default(cuid())
+  id                 String      @id @default(cuid())
   liveSessionId      String
-  liveSession        LiveSession  @relation(fields: [liveSessionId], references: [id], onDelete: Cascade)
-  anonymousTokenHash String       @unique
+  liveSession        LiveSession @relation(fields: [liveSessionId], references: [id], onDelete: Cascade)
+  anonymousTokenHash String      @unique
+  displayName        String?
   answers            Answer[]
-  createdAt          DateTime     @default(now())
-  lastSeenAt         DateTime     @default(now())
+  createdAt          DateTime    @default(now())
+  lastSeenAt         DateTime    @default(now())
 
   @@index([liveSessionId, lastSeenAt])
 }
 
 model Answer {
-  id             String              @id @default(cuid())
-  liveSessionId  String
-  liveSession    LiveSession         @relation(fields: [liveSessionId], references: [id], onDelete: Cascade)
-  nodeId         String
-  node           PresentationNode    @relation(fields: [nodeId], references: [id], onDelete: Cascade)
-  participantId  String
-  participant    ParticipantSession  @relation(fields: [participantId], references: [id], onDelete: Cascade)
-  requestId      String              @unique
-  value          Json
-  isHidden       Boolean             @default(false)
-  createdAt      DateTime            @default(now())
-  updatedAt      DateTime            @updatedAt
+  id            String             @id @default(cuid())
+  liveSessionId String
+  liveSession   LiveSession        @relation(fields: [liveSessionId], references: [id], onDelete: Cascade)
+  nodeId        String
+  node          PresentationNode   @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  participantId String
+  participant   ParticipantSession @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  requestId     String             @unique
+  value         Json
+  isHidden      Boolean            @default(false)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
 
   @@unique([liveSessionId, nodeId, participantId])
   @@index([liveSessionId, nodeId])

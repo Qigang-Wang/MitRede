@@ -21,7 +21,7 @@ type RealtimeSocket = Socket<
 
 @WebSocketGateway({
   namespace: "/sessions",
-  cors: { origin: process.env.WEB_ORIGIN ?? "http://localhost:5173" },
+  cors: { origin: true },
   transports: ["websocket", "polling"],
 })
 export class RealtimeGateway {
