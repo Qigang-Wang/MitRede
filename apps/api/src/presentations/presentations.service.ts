@@ -4,8 +4,9 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { NodeType, Prisma } from "@prisma/client";
+import type { PresentationExport } from "@mitrede/contracts";
 import { PDFDocument } from "pdf-lib";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { PrismaService } from "../database/prisma.service";
@@ -18,6 +19,7 @@ import type { UpdateGroupPageDto } from "./dto/update-group-page.dto";
 import type { UpdateGroupDiscussionDto } from "./dto/update-group-discussion.dto";
 import type { UpdateGroupPresentationDto } from "./dto/update-group-presentation.dto";
 import type { UpdatePriorityVoteDto } from "./dto/update-priority-vote.dto";
+import type { UpdateWebPageDto } from "./dto/update-web-page.dto";
 
 const demoEmail = "demo@mitrede.local";
 
@@ -147,6 +149,261 @@ export class PresentationsService {
       },
       include: { nodes: { orderBy: { position: "asc" } } },
     });
+  }
+
+  async exportPresentation(id: string) {
+    const presentation = await this.get(id);
+    const assetReferences = new Map<string, "PDF" | "IMAGE">();
+    const nodes = presentation.nodes.map((node) => {
+      if (!this.isRecord(node.config)) {
+        throw new BadRequestException("Die Präsentation enthält eine ungültige Seitenkonfiguration");
+      }
+      this.collectAssetReferences(node.type, node.config, assetReferences);
+      return {
+        sourceId: node.id,
+        position: node.position,
+        type: node.type,
+        sourcePageNumber: node.sourcePageNumber,
+        config: node.config,
+      };
+    });
+
+    const storageRoot = resolve(process.env.STORAGE_PATH ?? "../../storage");
+    const assets: PresentationExport["assets"] = [];
+    for (const [objectKey, kind] of assetReferences) {
+      const filePath = resolve(storageRoot, kind === "PDF" ? "pdfs" : "images", objectKey);
+      let data: Buffer;
+      try {
+        data = await readFile(filePath);
+      } catch {
+        throw new BadRequestException(`Die Mediendatei ${objectKey} fehlt und kann nicht exportiert werden`);
+      }
+      assets.push({
+        objectKey,
+        kind,
+        mimeType: this.assetMimeType(objectKey, kind),
+        dataBase64: data.toString("base64"),
+      });
+    }
+
+    const payload: PresentationExport = {
+      format: "mitrede.presentation",
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      presentation: { title: presentation.title, nodes },
+      assets,
+    };
+    return {
+      title: presentation.title,
+      contents: Buffer.from(JSON.stringify(payload, null, 2)),
+    };
+  }
+
+  async importPresentation(file: Express.Multer.File) {
+    if (!file.originalname.toLowerCase().endsWith(".json")) {
+      throw new BadRequestException("Bitte wählen Sie eine MitRede-JSON-Datei aus");
+    }
+    const payload = this.parsePresentationExport(file.buffer);
+    const preparedAssets = this.prepareImportedAssets(payload);
+    const storageRoot = resolve(process.env.STORAGE_PATH ?? "../../storage");
+    const writtenPaths: string[] = [];
+
+    try {
+      for (const asset of preparedAssets.values()) {
+        const directory = resolve(storageRoot, asset.kind === "PDF" ? "pdfs" : "images");
+        await mkdir(directory, { recursive: true });
+        const filePath = resolve(directory, asset.newObjectKey);
+        await writeFile(filePath, asset.data, { flag: "wx" });
+        writtenPaths.push(filePath);
+      }
+
+      const owner = await this.owner();
+      const nodeIds = new Map(payload.presentation.nodes.map((node) => [node.sourceId, randomUUID()]));
+      const imported = await this.prisma.$transaction(async (tx) => {
+        const presentation = await tx.presentation.create({
+          data: {
+            ownerId: owner.id,
+            title: payload.presentation.title,
+            status: "ACTIVE",
+          },
+        });
+        for (const node of [...payload.presentation.nodes].sort((left, right) => left.position - right.position)) {
+          await tx.presentationNode.create({
+            data: {
+              id: nodeIds.get(node.sourceId),
+              presentationId: presentation.id,
+              position: node.position,
+              type: node.type,
+              sourcePageNumber: node.sourcePageNumber,
+              config: this.remapImportedConfig(node.type, node.config, preparedAssets, nodeIds) as Prisma.InputJsonValue,
+            },
+          });
+        }
+        return presentation;
+      });
+      return this.get(imported.id);
+    } catch (error) {
+      await Promise.all(writtenPaths.map((filePath) => unlink(filePath).catch(() => undefined)));
+      throw error;
+    }
+  }
+
+  private collectAssetReferences(type: NodeType, config: Record<string, unknown>, references: Map<string, "PDF" | "IMAGE">) {
+    if (type === NodeType.PDF_PAGE) {
+      const objectKey = config.objectKey;
+      if (typeof objectKey !== "string" || !/^[a-f0-9-]{36}\.pdf$/i.test(objectKey)) {
+        throw new BadRequestException("Eine PDF-Seite enthält einen ungültigen Dateiverweis");
+      }
+      references.set(objectKey, "PDF");
+    }
+    if (type === NodeType.FREEFORM_PAGE && Array.isArray(config.elements)) {
+      for (const element of config.elements) {
+        if (!this.isRecord(element) || element.type !== "IMAGE") continue;
+        const objectKey = element.objectKey;
+        if (typeof objectKey !== "string" || !/^[a-f0-9-]{36}\.(png|jpg|webp)$/i.test(objectKey)) {
+          throw new BadRequestException("Eine freie Seite enthält einen ungültigen Bildverweis");
+        }
+        references.set(objectKey, "IMAGE");
+      }
+    }
+  }
+
+  private assetMimeType(objectKey: string, kind: "PDF" | "IMAGE"): PresentationExport["assets"][number]["mimeType"] {
+    if (kind === "PDF") return "application/pdf";
+    if (objectKey.toLowerCase().endsWith(".png")) return "image/png";
+    if (objectKey.toLowerCase().endsWith(".webp")) return "image/webp";
+    return "image/jpeg";
+  }
+
+  private parsePresentationExport(buffer: Buffer): PresentationExport {
+    let value: unknown;
+    try {
+      value = JSON.parse(buffer.toString("utf8"));
+    } catch {
+      throw new BadRequestException("Die Importdatei enthält kein gültiges JSON");
+    }
+    if (!this.isRecord(value) || value.format !== "mitrede.presentation" || value.version !== 1) {
+      throw new BadRequestException("Dieses Exportformat wird nicht unterstützt");
+    }
+    if (typeof value.exportedAt !== "string" || Number.isNaN(Date.parse(value.exportedAt))) {
+      throw new BadRequestException("Der Exportzeitpunkt ist ungültig");
+    }
+    if (!this.isRecord(value.presentation) || typeof value.presentation.title !== "string") {
+      throw new BadRequestException("Die Präsentationsdaten fehlen");
+    }
+    const title = value.presentation.title.trim();
+    if (!title || title.length > 200 || !Array.isArray(value.presentation.nodes) || value.presentation.nodes.length > 2000) {
+      throw new BadRequestException("Titel oder Seitenliste ist ungültig");
+    }
+    if (!Array.isArray(value.assets) || value.assets.length > 2000) {
+      throw new BadRequestException("Die Medienliste ist ungültig");
+    }
+
+    const nodeTypes = new Set<string>(Object.values(NodeType));
+    const sourceIds = new Set<string>();
+    const positions = new Set<number>();
+    for (const node of value.presentation.nodes) {
+      if (!this.isRecord(node)
+        || typeof node.sourceId !== "string" || !node.sourceId || node.sourceId.length > 100
+        || typeof node.position !== "number" || !Number.isInteger(node.position) || node.position < 0
+        || typeof node.type !== "string" || !nodeTypes.has(node.type)
+        || (node.sourcePageNumber !== null && (typeof node.sourcePageNumber !== "number" || !Number.isInteger(node.sourcePageNumber) || node.sourcePageNumber < 1))
+        || !this.isRecord(node.config)
+        || sourceIds.has(node.sourceId) || positions.has(node.position)) {
+        throw new BadRequestException("Mindestens eine importierte Seite ist ungültig");
+      }
+      sourceIds.add(node.sourceId);
+      positions.add(node.position);
+    }
+    if ([...positions].some((position) => position >= positions.size)) {
+      throw new BadRequestException("Die Seitenreihenfolge ist unvollständig");
+    }
+
+    const assetKeys = new Set<string>();
+    for (const asset of value.assets) {
+      if (!this.isRecord(asset)
+        || typeof asset.objectKey !== "string" || !asset.objectKey || asset.objectKey.length > 100
+        || (asset.kind !== "PDF" && asset.kind !== "IMAGE")
+        || !["application/pdf", "image/png", "image/jpeg", "image/webp"].includes(String(asset.mimeType))
+        || typeof asset.dataBase64 !== "string" || !asset.dataBase64
+        || assetKeys.has(asset.objectKey)) {
+        throw new BadRequestException("Mindestens eine importierte Mediendatei ist ungültig");
+      }
+      assetKeys.add(asset.objectKey);
+    }
+    return {
+      format: "mitrede.presentation",
+      version: 1,
+      exportedAt: value.exportedAt,
+      presentation: {
+        title,
+        nodes: value.presentation.nodes as PresentationExport["presentation"]["nodes"],
+      },
+      assets: value.assets as PresentationExport["assets"],
+    };
+  }
+
+  private prepareImportedAssets(payload: PresentationExport) {
+    const prepared = new Map<string, { kind: "PDF" | "IMAGE"; newObjectKey: string; data: Buffer }>();
+    let totalSize = 0;
+    for (const asset of payload.assets) {
+      if (asset.dataBase64.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(asset.dataBase64)) {
+        throw new BadRequestException(`Die Mediendatei ${asset.objectKey} ist beschädigt`);
+      }
+      const data = Buffer.from(asset.dataBase64, "base64");
+      const maximumSize = asset.kind === "PDF" ? 100 * 1024 * 1024 : 10 * 1024 * 1024;
+      totalSize += data.length;
+      if (!data.length || data.length > maximumSize || totalSize > 180 * 1024 * 1024) {
+        throw new BadRequestException("Die importierten Mediendateien sind zu groß");
+      }
+      const extension = this.validateImportedAsset(asset.kind, asset.mimeType, data);
+      prepared.set(asset.objectKey, { kind: asset.kind, newObjectKey: `${randomUUID()}.${extension}`, data });
+    }
+    return prepared;
+  }
+
+  private validateImportedAsset(kind: "PDF" | "IMAGE", mimeType: string, data: Buffer) {
+    if (kind === "PDF" && mimeType === "application/pdf" && data.subarray(0, 5).toString() === "%PDF-") return "pdf";
+    const png = data.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+    const jpeg = data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff;
+    const webp = data.subarray(0, 4).toString() === "RIFF" && data.subarray(8, 12).toString() === "WEBP";
+    if (kind === "IMAGE" && ((mimeType === "image/png" && png) || (mimeType === "image/jpeg" && jpeg) || (mimeType === "image/webp" && webp))) {
+      return mimeType === "image/png" ? "png" : mimeType === "image/webp" ? "webp" : "jpg";
+    }
+    throw new BadRequestException("Eine importierte Mediendatei hat ein ungültiges Format");
+  }
+
+  private remapImportedConfig(
+    type: NodeType,
+    config: Record<string, unknown>,
+    assets: Map<string, { kind: "PDF" | "IMAGE"; newObjectKey: string; data: Buffer }>,
+    nodeIds: Map<string, string>,
+  ) {
+    const remapped = structuredClone(config);
+    if (type === NodeType.PDF_PAGE) {
+      const originalKey = remapped.objectKey;
+      const asset = typeof originalKey === "string" ? assets.get(originalKey) : undefined;
+      if (!asset || asset.kind !== "PDF") throw new BadRequestException("Eine referenzierte PDF-Datei fehlt im Import");
+      remapped.objectKey = asset.newObjectKey;
+    }
+    if (type === NodeType.FREEFORM_PAGE && Array.isArray(remapped.elements)) {
+      for (const element of remapped.elements) {
+        if (!this.isRecord(element) || element.type !== "IMAGE") continue;
+        const asset = typeof element.objectKey === "string" ? assets.get(element.objectKey) : undefined;
+        if (!asset || asset.kind !== "IMAGE") throw new BadRequestException("Ein referenziertes Bild fehlt im Import");
+        element.objectKey = asset.newObjectKey;
+      }
+    }
+    if (typeof remapped.sourceGroupNodeId === "string") {
+      const mappedNodeId = nodeIds.get(remapped.sourceGroupNodeId);
+      if (!mappedNodeId) throw new BadRequestException("Eine verknüpfte Gruppenseite fehlt im Import");
+      remapped.sourceGroupNodeId = mappedNodeId;
+    }
+    return remapped;
+  }
+
+  private isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
   }
 
   async addPoll(id: string, body: CreatePollDto) {
@@ -302,6 +559,50 @@ export class PresentationsService {
     });
   }
 
+  async addWebPage(id: string) {
+    await this.get(id);
+    const aggregate = await this.prisma.presentationNode.aggregate({
+      where: { presentationId: id },
+      _max: { position: true },
+    });
+    return this.prisma.$transaction(async (tx) => {
+      const created = await tx.presentationNode.create({
+        data: {
+          presentationId: id,
+          position: (aggregate._max.position ?? -1) + 1,
+          type: "WEB_PAGE",
+          config: {
+            title: "Neue Webseite",
+            url: "https://example.com",
+            interactive: true,
+          },
+        },
+      });
+      await tx.presentation.update({ where: { id }, data: { revision: { increment: 1 } } });
+      return created;
+    });
+  }
+
+  async updateWebPage(id: string, nodeId: string, body: UpdateWebPageDto) {
+    const node = await this.prisma.presentationNode.findFirst({ where: { id: nodeId, presentationId: id } });
+    if (!node) throw new NotFoundException("Webseite nicht gefunden");
+    if (node.type !== "WEB_PAGE") throw new BadRequestException("Diese Seite ist keine Webseite");
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.presentationNode.update({
+        where: { id: nodeId },
+        data: {
+          config: {
+            title: body.title.trim(),
+            url: body.url.trim(),
+            interactive: body.interactive ?? true,
+          },
+        },
+      });
+      await tx.presentation.update({ where: { id }, data: { revision: { increment: 1 } } });
+      return updated;
+    });
+  }
+
   async addFreeformPage(id: string, template: "BLANK" | "TITLE_BODY" = "BLANK") {
     await this.get(id);
     const aggregate = await this.prisma.presentationNode.aggregate({
@@ -340,7 +641,7 @@ export class PresentationsService {
                 width: 1120,
                 height: 300,
                 text: "Fügen Sie hier Ihre Inhalte hinzu.",
-                fontSize: 30,
+                fontSize: 42,
                 color: "#5f665f",
                 fontWeight: 400,
                 fontStyle: "normal",

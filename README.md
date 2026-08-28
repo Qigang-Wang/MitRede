@@ -53,6 +53,40 @@ Danach sind erreichbar:
 
 Der Worker wird bei Bedarf separat mit `pnpm dev:worker` gestartet.
 
+## Mit Docker bereitstellen
+
+Die Produktionskonfiguration baut Web-App und API, führt beim API-Start die
+Prisma-Migrationen aus und speichert PostgreSQL-Daten sowie hochgeladene Medien
+in Docker-Volumes.
+
+```bash
+cp .env.deploy.example .env.deploy
+# Passwörter und PUBLIC_ORIGIN in .env.deploy anpassen
+docker compose --env-file .env.deploy -f docker-compose.deploy.yml up -d --build
+```
+
+Mit `HTTP_PORT=80` ist MitRede anschließend unter der in `PUBLIC_ORIGIN`
+eingetragenen Adresse erreichbar. Für HTTPS muss ein TLS-Reverse-Proxy
+vorgeschaltet und `PUBLIC_ORIGIN=https://…` sowie `COOKIE_SECURE=true` gesetzt
+werden. Enthält das Datenbankpasswort URL-Sonderzeichen, müssen diese in
+`DATABASE_URL` URL-kodiert werden oder ein URL-kompatibles Passwort verwendet
+werden.
+
+Status und Logs lassen sich so prüfen:
+
+```bash
+docker compose --env-file .env.deploy -f docker-compose.deploy.yml ps
+docker compose --env-file .env.deploy -f docker-compose.deploy.yml logs -f api web
+```
+
+## Präsentationen übertragen
+
+In der Übersicht kann eine selbstständige `.mitrede.json`-Datei importiert
+werden. Der Export befindet sich im Optionsmenü jeder Präsentationskarte. Die
+Datei enthält die Seitenstruktur, Verknüpfungen, PDFs und Bilder; Sitzungen,
+Teilnehmende und Antworten sind bewusst nicht enthalten. Beim Import wird eine
+neue Präsentation mit neuen internen IDs erstellt.
+
 ## Projektstruktur
 
 ```text

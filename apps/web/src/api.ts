@@ -58,6 +58,8 @@ export type PollConfig = {
   durationMinutes?: number;
   maxAnswers?: number;
   statements?: string[];
+  url?: string;
+  interactive?: boolean;
 };
 
 export type FreeformTextElement = {
@@ -93,7 +95,7 @@ export type PresentationNode = {
   id: string;
   presentationId?: string;
   position: number;
-  type: "PDF_PAGE" | "JOIN_PAGE" | "CONTENT_PAGE" | "FREEFORM_PAGE" | "GROUP_PAGE" | "GROUP_DISCUSSION" | "GROUP_PRESENTATION" | "PRIORITY_VOTE" | "MULTIPLE_CHOICE" | "RATING" | "WORD_CLOUD" | "OPEN_QUESTION" | "AI_SUMMARY";
+  type: "PDF_PAGE" | "JOIN_PAGE" | "CONTENT_PAGE" | "WEB_PAGE" | "FREEFORM_PAGE" | "GROUP_PAGE" | "GROUP_DISCUSSION" | "GROUP_PRESENTATION" | "PRIORITY_VOTE" | "MULTIPLE_CHOICE" | "RATING" | "WORD_CLOUD" | "OPEN_QUESTION" | "AI_SUMMARY";
   config: PollConfig;
   sourcePageNumber: number | null;
 };
@@ -126,6 +128,7 @@ export type SessionSnapshot = {
   presentation: { id: string; title: string };
   currentNode: PresentationNode | null;
   timeline?: PresentationNode[];
+  participantCount: number;
   results: { total: number; counts: number[] };
   groups: Array<{ id: string; name: string; memberCount: number; memberNames: string[]; result: string; answers: string[]; completed: boolean }>;
   participantGroupId: string | null;
@@ -200,11 +203,33 @@ export type SessionResults = {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, { credentials: "include", ...init });
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ message: "Unbekannter Fehler" }));
-    const message = Array.isArray(error.message) ? error.message.join(" ") : error.message;
-    throw new Error(message || `HTTP ${response.status}`);
+    throw new Error(await responseError(response));
   }
   return response.json() as Promise<T>;
+}
+
+async function responseError(response: Response) {
+  const error = await response.json().catch(() => ({ message: "Unbekannter Fehler" }));
+  const message = Array.isArray(error.message) ? error.message.join(" ") : error.message;
+  return message || `HTTP ${response.status}`;
+}
+
+async function download(path: string, fileName: string) {
+  const response = await fetch(`${API_URL}${path}`, { credentials: "include" });
+  if (!response.ok) throw new Error(await responseError(response));
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function exportFileName(title: string) {
+  const normalized = title.trim().replace(/[\\/:*?"<>|]+/g, "-") || "Präsentation";
+  return `${normalized}.mitrede.json`;
 }
 
 export const api = {
@@ -228,6 +253,13 @@ export const api = {
     form.append("title", title);
     if (file) form.append("file", file);
     return request<PresentationSummary>("/presentations", { method: "POST", body: form });
+  },
+  exportPresentation: (presentationId: string, title: string) =>
+    download(`/presentations/${presentationId}/export`, exportFileName(title)),
+  importPresentation: (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return request<PresentationDetails>("/presentations/import", { method: "POST", body: form });
   },
   deletePresentation: (presentationId: string) => request<{ removed: boolean; sessionIds: string[] }>(`/presentations/${presentationId}`, { method: "DELETE" }),
   startSession: (presentationId: string) =>
@@ -328,6 +360,8 @@ export const api = {
     request<PresentationNode>(`/presentations/${presentationId}/join-pages`, { method: "POST" }),
   addContentPage: (presentationId: string) =>
     request<PresentationNode>(`/presentations/${presentationId}/content-pages`, { method: "POST" }),
+  addWebPage: (presentationId: string) =>
+    request<PresentationNode>(`/presentations/${presentationId}/web-pages`, { method: "POST" }),
   addFreeformPage: (presentationId: string) =>
     request<PresentationNode>(`/presentations/${presentationId}/freeform-pages`, { method: "POST" }),
   addFreeformTemplate: (presentationId: string) =>
@@ -371,6 +405,16 @@ export const api = {
     body: { eyebrow?: string; title: string; body: string },
   ) =>
     request<PresentationNode>(`/presentations/${presentationId}/nodes/${nodeId}/content`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  updateWebPage: (
+    presentationId: string,
+    nodeId: string,
+    body: { title: string; url: string; interactive: boolean },
+  ) =>
+    request<PresentationNode>(`/presentations/${presentationId}/nodes/${nodeId}/web`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),

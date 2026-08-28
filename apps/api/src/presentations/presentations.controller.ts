@@ -7,11 +7,14 @@ import {
   Param,
   Patch,
   Post,
+  Res,
+  StreamableFile,
   UploadedFile,
   UseInterceptors,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { ApiBody, ApiConsumes, ApiOperation, ApiTags } from "@nestjs/swagger";
+import type { Response } from "express";
 import { CreateContentPageDto } from "./dto/create-content-page.dto";
 import { CreateFreeformPageDto } from "./dto/create-freeform-page.dto";
 import { UpdateFreeformPageDto } from "./dto/update-freeform-page.dto";
@@ -19,6 +22,7 @@ import { UpdateGroupPageDto } from "./dto/update-group-page.dto";
 import { UpdateGroupDiscussionDto } from "./dto/update-group-discussion.dto";
 import { UpdateGroupPresentationDto } from "./dto/update-group-presentation.dto";
 import { UpdatePriorityVoteDto } from "./dto/update-priority-vote.dto";
+import { UpdateWebPageDto } from "./dto/update-web-page.dto";
 import { CreatePollDto } from "./dto/create-poll.dto";
 import { CreateRatingDto } from "./dto/create-rating.dto";
 import { CreatePresentationDto } from "./dto/create-presentation.dto";
@@ -40,6 +44,20 @@ export class PresentationsController {
   @ApiOperation({ summary: "Lädt eine Präsentation mit ihren Knoten" })
   get(@Param("id") id: string) {
     return this.presentations.get(id);
+  }
+
+  @Get(":id/export")
+  @ApiOperation({ summary: "Exportiert eine Präsentation einschließlich ihrer Medien" })
+  async exportPresentation(@Param("id") id: string, @Res({ passthrough: true }) response: Response) {
+    const exported = await this.presentations.exportPresentation(id);
+    const fallbackName = exported.title.replace(/[^a-z0-9._-]+/gi, "-").replace(/^-+|-+$/g, "") || "presentation";
+    const fileName = `${exported.title}.mitrede.json`;
+    response.set({
+      "Content-Type": "application/json; charset=utf-8",
+      "Content-Disposition": `attachment; filename="${fallbackName}.mitrede.json"; filename*=UTF-8''${encodeURIComponent(fileName)}`,
+      "Content-Length": String(exported.contents.length),
+    });
+    return new StreamableFile(exported.contents);
   }
 
   @Delete(":id")
@@ -71,6 +89,22 @@ export class PresentationsController {
       : this.presentations.createBlank(body.title);
   }
 
+  @Post("import")
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 256 * 1024 * 1024 } }))
+  @ApiConsumes("multipart/form-data")
+  @ApiBody({
+    schema: {
+      type: "object",
+      required: ["file"],
+      properties: { file: { type: "string", format: "binary" } },
+    },
+  })
+  @ApiOperation({ summary: "Importiert einen MitRede-Präsentationsexport als neue Präsentation" })
+  importPresentation(@UploadedFile() file?: Express.Multer.File) {
+    if (!file) throw new BadRequestException("Importdatei fehlt");
+    return this.presentations.importPresentation(file);
+  }
+
   @Post(":id/polls")
   @ApiOperation({ summary: "Fügt eine Single-Choice-Frage hinzu" })
   addPoll(@Param("id") id: string, @Body() body: CreatePollDto) {
@@ -93,6 +127,12 @@ export class PresentationsController {
   @ApiOperation({ summary: "Fügt eine Informationsseite hinzu" })
   addContentPage(@Param("id") id: string) {
     return this.presentations.addContentPage(id);
+  }
+
+  @Post(":id/web-pages")
+  @ApiOperation({ summary: "Fügt eine eingebettete Webseite hinzu" })
+  addWebPage(@Param("id") id: string) {
+    return this.presentations.addWebPage(id);
   }
 
   @Post(":id/freeform-pages")
@@ -171,6 +211,16 @@ export class PresentationsController {
     @Body() body: CreateContentPageDto,
   ) {
     return this.presentations.updateContentPage(id, nodeId, body);
+  }
+
+  @Patch(":id/nodes/:nodeId/web")
+  @ApiOperation({ summary: "Aktualisiert eine eingebettete Webseite" })
+  updateWebPage(
+    @Param("id") id: string,
+    @Param("nodeId") nodeId: string,
+    @Body() body: UpdateWebPageDto,
+  ) {
+    return this.presentations.updateWebPage(id, nodeId, body);
   }
 
   @Patch(":id/nodes/:nodeId/freeform")

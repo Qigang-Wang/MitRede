@@ -12,6 +12,7 @@ import {
   FileText,
   EyeOff,
   Gauge,
+  Globe2,
   GripVertical,
   ImagePlus,
   Italic,
@@ -35,8 +36,10 @@ import {
 } from "lucide-react";
 import { api, createClientId, prepareProjectionWindow, showProjectionWindow, type FreeformElement, type PresentationDetails, type PresentationNode } from "./api";
 import { FreeformPageEditor, FreeformPageRenderer } from "./FreeformPage";
+import { ContentPage } from "./ContentPage";
 import { PdfPageCanvas, usePdfPageAspectRatio } from "./PdfPage";
 import { RatingScaleRail } from "./RatingScale";
+import { isValidWebPageUrl, WebPage } from "./WebPage";
 
 function editorPresentationId() {
   return decodeURIComponent(window.location.pathname.split("/").filter(Boolean)[2] ?? "");
@@ -62,7 +65,10 @@ function NodeThumb({ node }: { node: PresentationNode }) {
     return <div className={statements.length > 1 ? "page-thumb-preview rating-thumb-preview multi" : "page-thumb-preview rating-thumb-preview"}><strong>{node.config.question || "Neue Skalenfrage"}</strong>{statements.length > 1 ? <div className="rating-thumb-statements">{statements.slice(0, 3).map((statement, index) => <span key={index}>{statement}<i /></span>)}</div> : <RatingScaleRail min={min} max={max} minLabel={node.config.minLabel} maxLabel={node.config.maxLabel} compact className="rating-thumb-rail" />}</div>;
   }
   if (node.type === "CONTENT_PAGE") {
-    return <div className="page-thumb-preview content-thumb-preview"><strong>{node.config.title || "Neue Informationsseite"}</strong><p>{node.config.body || "Ergänzen Sie hier Ihre Inhalte."}</p></div>;
+    return <ContentPage title={node.config.title} body={node.config.body} className="page-thumb-preview content-page-thumb-preview" />;
+  }
+  if (node.type === "WEB_PAGE") {
+    return <WebPage title={node.config.title} url={node.config.url} interactive={false} className="page-thumb-preview web-page-thumb-preview" />;
   }
   if (node.type === "FREEFORM_PAGE") {
     return <FreeformPageRenderer config={node.config} className="freeform-thumb-preview page-thumb-preview" />;
@@ -91,7 +97,7 @@ function ResultDisplaySetting({ value, onChange }: { value: "MANUAL" | "LIVE"; o
   return <div className="result-display-setting"><div><strong>Ergebnisanzeige</strong><small>Wann sollen Stimmen auf der Leinwand erscheinen?</small></div><div className="result-display-options"><button className={value === "MANUAL" ? "active" : ""} onClick={() => onChange("MANUAL")}><strong>Am Ende</strong><span>Manuell veröffentlichen</span></button><button className={value === "LIVE" ? "active" : ""} onClick={() => onChange("LIVE")}><strong>Live</strong><span>Nach jeder Antwort</span></button></div><p>Die Antworten werden in beiden Modi sofort gespeichert.</p></div>;
 }
 
-function InteractionPicker({ onClose, onChoose }: { onClose: () => void; onChoose: (type: "JOIN_PAGE" | "CONTENT_PAGE" | "FREEFORM_PAGE" | "FREEFORM_TEMPLATE" | "GROUP_PAGE" | "GROUP_DISCUSSION" | "GROUP_PRESENTATION" | "PRIORITY_VOTE" | "MULTIPLE_CHOICE" | "RATING" | "QUIZ") => void }) {
+function InteractionPicker({ onClose, onChoose }: { onClose: () => void; onChoose: (type: "JOIN_PAGE" | "CONTENT_PAGE" | "WEB_PAGE" | "FREEFORM_PAGE" | "FREEFORM_TEMPLATE" | "GROUP_PAGE" | "GROUP_DISCUSSION" | "GROUP_PRESENTATION" | "PRIORITY_VOTE" | "MULTIPLE_CHOICE" | "RATING" | "QUIZ") => void }) {
   return (
     <div className="interaction-picker-backdrop" onMouseDown={onClose}>
       <section className="interaction-picker" role="dialog" aria-modal="true" aria-labelledby="interaction-picker-title" onMouseDown={(event) => event.stopPropagation()}>
@@ -99,6 +105,7 @@ function InteractionPicker({ onClose, onChoose }: { onClose: () => void; onChoos
         <div className="interaction-category participation"><div className="interaction-category-heading"><span>INHALT</span></div><div className="interaction-type-grid participation">
           <button onClick={() => onChoose("JOIN_PAGE")}><span><QrCode size={24} /></span><strong>Teilnahmeseite</strong></button>
           <button onClick={() => onChoose("CONTENT_PAGE")}><span><FileText size={24} /></span><strong>Informationsseite</strong></button>
+          <button onClick={() => onChoose("WEB_PAGE")}><span><Globe2 size={24} /></span><strong>Webseite</strong></button>
           <button onClick={() => onChoose("FREEFORM_PAGE")}><span><Type size={24} /></span><strong>Freie Seite</strong></button>
           <button onClick={() => onChoose("FREEFORM_TEMPLATE")}><span><LayoutTemplate size={24} /></span><strong>Titel &amp; Inhalt</strong></button>
         </div></div>
@@ -143,6 +150,9 @@ export default function EditorView() {
   const [ratingStatements, setRatingStatements] = useState<string[]>(["Aussage 1"]);
   const [contentTitle, setContentTitle] = useState("");
   const [contentBody, setContentBody] = useState("");
+  const [webTitle, setWebTitle] = useState("");
+  const [webUrl, setWebUrl] = useState("https://example.com");
+  const [webInteractive, setWebInteractive] = useState(true);
   const [freeformBackground, setFreeformBackground] = useState("#fffaf1");
   const [freeformElements, setFreeformElements] = useState<FreeformElement[]>([]);
   const [selectedFreeformElementId, setSelectedFreeformElementId] = useState<string | null>(null);
@@ -305,6 +315,14 @@ export default function EditorView() {
       setSaveState("saved");
       return;
     }
+    if (selected.type === "WEB_PAGE") {
+      setWebTitle(selected.config.title ?? "Neue Webseite");
+      setWebUrl(selected.config.url ?? "https://example.com");
+      setWebInteractive(selected.config.interactive ?? true);
+      setDirty(false);
+      setSaveState("saved");
+      return;
+    }
     setQuestion(selected.config.question ?? "");
     setOptions(selected.config.options ?? []);
     setResultDisplayMode(selected.config.resultDisplayMode ?? "MANUAL");
@@ -325,7 +343,8 @@ export default function EditorView() {
     if (!dirty || !selected || selected.type === "PDF_PAGE" || selected.type === "JOIN_PAGE") return;
     if ((selected.type === "GROUP_PAGE" || selected.type === "GROUP_DISCUSSION") && groupQuestion.trim().length < 3) return;
     if (selected.type === "CONTENT_PAGE" && contentTitle.trim().length < 1) return;
-    if (selected.type !== "CONTENT_PAGE" && selected.type !== "FREEFORM_PAGE" && selected.type !== "GROUP_PAGE" && selected.type !== "GROUP_DISCUSSION" && question.trim().length < 3) return;
+    if (selected.type === "WEB_PAGE" && (!webTitle.trim() || !isValidWebPageUrl(webUrl.trim()))) return;
+    if (selected.type !== "CONTENT_PAGE" && selected.type !== "WEB_PAGE" && selected.type !== "FREEFORM_PAGE" && selected.type !== "GROUP_PAGE" && selected.type !== "GROUP_DISCUSSION" && question.trim().length < 3) return;
     if (selected.type === "MULTIPLE_CHOICE" && options.filter((option) => option.trim()).length < 2) return;
     if (selected.type === "RATING" && (ratingMax <= ratingMin || ratingMax - ratingMin > 100)) return;
     if (selected.type === "RATING" && ratingStatements.some((statement) => !statement.trim())) return;
@@ -344,6 +363,8 @@ export default function EditorView() {
           ? await api.updateFreeformPage(presentationId, selected.id, { backgroundColor: freeformBackground, elements: freeformElements })
           : selected.type === "CONTENT_PAGE"
           ? await api.updateContentPage(presentationId, selected.id, { eyebrow: "", title: contentTitle.trim(), body: contentBody.trim() })
+          : selected.type === "WEB_PAGE"
+          ? await api.updateWebPage(presentationId, selected.id, { title: webTitle.trim(), url: webUrl.trim(), interactive: webInteractive })
           : selected.type === "RATING"
           ? await api.updateRating(presentationId, selected.id, { question: question.trim(), statements: ratingStatements.map((statement) => statement.trim()), min: ratingMin, max: ratingMax, minLabel: ratingMinLabel.trim(), maxLabel: ratingMaxLabel.trim(), resultDisplayMode })
           : await api.updatePoll(presentationId, selected.id, question.trim(), options.map((option) => option.trim()).filter(Boolean), resultDisplayMode, assessmentMode, correctOptionIndex);
@@ -355,12 +376,12 @@ export default function EditorView() {
       }
     }, 700);
     return () => window.clearTimeout(timer);
-  }, [assessmentMode, contentBody, contentTitle, correctOptionIndex, dirty, freeformBackground, freeformElements, groupDurationMinutes, groupMaxAnswers, groupMaxGroups, groupPresentationSourceNodeId, groupPrompt, groupQuestion, groupResultPrompt, groupSourceNodeId, options, presentationId, priorityMaxVisibleResults, priorityMaxVotes, prioritySourceGroupNodeId, question, ratingMax, ratingMaxLabel, ratingMin, ratingMinLabel, ratingStatements, resultDisplayMode, selected]);
+  }, [assessmentMode, contentBody, contentTitle, correctOptionIndex, dirty, freeformBackground, freeformElements, groupDurationMinutes, groupMaxAnswers, groupMaxGroups, groupPresentationSourceNodeId, groupPrompt, groupQuestion, groupResultPrompt, groupSourceNodeId, options, presentationId, priorityMaxVisibleResults, priorityMaxVotes, prioritySourceGroupNodeId, question, ratingMax, ratingMaxLabel, ratingMin, ratingMinLabel, ratingStatements, resultDisplayMode, selected, webInteractive, webTitle, webUrl]);
 
-  async function insertAfter(index: number, type: "JOIN_PAGE" | "CONTENT_PAGE" | "FREEFORM_PAGE" | "FREEFORM_TEMPLATE" | "GROUP_PAGE" | "GROUP_DISCUSSION" | "GROUP_PRESENTATION" | "PRIORITY_VOTE" | "MULTIPLE_CHOICE" | "RATING" | "QUIZ") {
+  async function insertAfter(index: number, type: "JOIN_PAGE" | "CONTENT_PAGE" | "WEB_PAGE" | "FREEFORM_PAGE" | "FREEFORM_TEMPLATE" | "GROUP_PAGE" | "GROUP_DISCUSSION" | "GROUP_PRESENTATION" | "PRIORITY_VOTE" | "MULTIPLE_CHOICE" | "RATING" | "QUIZ") {
     if (!presentation) return;
     try {
-      const created = type === "JOIN_PAGE" ? await api.addJoinPage(presentationId) : type === "CONTENT_PAGE" ? await api.addContentPage(presentationId) : type === "FREEFORM_PAGE" ? await api.addFreeformPage(presentationId) : type === "FREEFORM_TEMPLATE" ? await api.addFreeformTemplate(presentationId) : type === "GROUP_PAGE" ? await api.addGroupPage(presentationId) : type === "GROUP_DISCUSSION" ? await api.addGroupDiscussion(presentationId) : type === "GROUP_PRESENTATION" ? await api.addGroupPresentation(presentationId) : type === "PRIORITY_VOTE" ? await api.addPriorityVote(presentationId) : type === "RATING" ? await api.addRating(presentationId) : type === "QUIZ" ? await api.addQuiz(presentationId) : await api.addPoll(presentationId);
+      const created = type === "JOIN_PAGE" ? await api.addJoinPage(presentationId) : type === "CONTENT_PAGE" ? await api.addContentPage(presentationId) : type === "WEB_PAGE" ? await api.addWebPage(presentationId) : type === "FREEFORM_PAGE" ? await api.addFreeformPage(presentationId) : type === "FREEFORM_TEMPLATE" ? await api.addFreeformTemplate(presentationId) : type === "GROUP_PAGE" ? await api.addGroupPage(presentationId) : type === "GROUP_DISCUSSION" ? await api.addGroupDiscussion(presentationId) : type === "GROUP_PRESENTATION" ? await api.addGroupPresentation(presentationId) : type === "PRIORITY_VOTE" ? await api.addPriorityVote(presentationId) : type === "RATING" ? await api.addRating(presentationId) : type === "QUIZ" ? await api.addQuiz(presentationId) : await api.addPoll(presentationId);
       const ids = presentation.nodes.map((node) => node.id);
       ids.splice(index + 1, 0, created.id);
       const reordered = await api.reorderNodes(presentationId, ids);
@@ -541,7 +562,7 @@ export default function EditorView() {
                 <span className="node-index">{index + 1}</span>
                 <GripVertical className="drag-handle" size={15} />
                 <NodeThumb node={node} />
-                <span className={node.type === "PDF_PAGE" ? "node-kind pdf" : node.type === "JOIN_PAGE" ? "node-kind join" : node.type === "CONTENT_PAGE" ? "node-kind content" : node.type === "FREEFORM_PAGE" ? "node-kind freeform" : node.type === "GROUP_PAGE" ? "node-kind group" : node.type === "GROUP_DISCUSSION" ? "node-kind discussion" : node.type === "GROUP_PRESENTATION" ? "node-kind group-presentation" : node.type === "PRIORITY_VOTE" ? "node-kind priority" : node.type === "RATING" ? "node-kind rating" : node.config.assessmentMode === "QUIZ" ? "node-kind quiz" : "node-kind poll"}>{node.type === "PDF_PAGE" ? `PDF ${node.sourcePageNumber}` : node.type === "JOIN_PAGE" ? "TEILNAHME" : node.type === "CONTENT_PAGE" ? "INHALT" : node.type === "FREEFORM_PAGE" ? "FREI" : node.type === "GROUP_PAGE" ? "GRUPPEN" : node.type === "GROUP_DISCUSSION" ? "DISKUSSION" : node.type === "GROUP_PRESENTATION" ? "ERGEBNISSE" : node.type === "PRIORITY_VOTE" ? "PRIORITÄT" : node.type === "RATING" ? (node.config.statements?.length ?? 0) > 1 ? "SKALEN" : "SKALA" : node.config.assessmentMode === "QUIZ" ? "QUIZ" : "UMFRAGE"}</span>
+                <span className={node.type === "PDF_PAGE" ? "node-kind pdf" : node.type === "JOIN_PAGE" ? "node-kind join" : node.type === "CONTENT_PAGE" ? "node-kind content" : node.type === "WEB_PAGE" ? "node-kind web" : node.type === "FREEFORM_PAGE" ? "node-kind freeform" : node.type === "GROUP_PAGE" ? "node-kind group" : node.type === "GROUP_DISCUSSION" ? "node-kind discussion" : node.type === "GROUP_PRESENTATION" ? "node-kind group-presentation" : node.type === "PRIORITY_VOTE" ? "node-kind priority" : node.type === "RATING" ? "node-kind rating" : node.config.assessmentMode === "QUIZ" ? "node-kind quiz" : "node-kind poll"}>{node.type === "PDF_PAGE" ? `PDF ${node.sourcePageNumber}` : node.type === "JOIN_PAGE" ? "TEILNAHME" : node.type === "CONTENT_PAGE" ? "INHALT" : node.type === "WEB_PAGE" ? "WEB" : node.type === "FREEFORM_PAGE" ? "FREI" : node.type === "GROUP_PAGE" ? "GRUPPEN" : node.type === "GROUP_DISCUSSION" ? "DISKUSSION" : node.type === "GROUP_PRESENTATION" ? "ERGEBNISSE" : node.type === "PRIORITY_VOTE" ? "PRIORITÄT" : node.type === "RATING" ? (node.config.statements?.length ?? 0) > 1 ? "SKALEN" : "SKALA" : node.config.assessmentMode === "QUIZ" ? "QUIZ" : "UMFRAGE"}</span>
               </button>
               <button className="insert-between" onClick={() => setInsertMenuIndex(index)} aria-label={`Seite nach Seite ${index + 1} einfügen`}><Plus size={13} /></button>
             </div>
@@ -555,7 +576,9 @@ export default function EditorView() {
         ) : selected?.type === "JOIN_PAGE" ? (
           <div className="join-page-canvas editor-slide-frame" style={slideStyle}><div className="join-page-copy"><h1>Jetzt teilnehmen</h1><p>QR-Code scannen oder Webadresse im Browser öffnen.</p><strong className="join-page-domain">{publicHost}</strong></div><div className="join-page-access-card"><span className="join-page-qr"><QrCode size={224} /></span><div className="join-page-code"><small>RAUMCODE</small><strong>123 456</strong></div></div></div>
         ) : selected?.type === "CONTENT_PAGE" ? (
-          <div className="content-page-canvas editor-slide-frame" style={slideStyle}><h1>{contentTitle || "Neue Informationsseite"}</h1><p className="content-page-body">{contentBody || "Ergänzen Sie hier Ihre Inhalte."}</p></div>
+          <ContentPage title={contentTitle} body={contentBody} className="editor-slide-frame" style={slideStyle} />
+        ) : selected?.type === "WEB_PAGE" ? (
+          <WebPage title={webTitle} url={webUrl} interactive={webInteractive} className="editor-slide-frame" style={slideStyle} />
         ) : selected?.type === "FREEFORM_PAGE" ? (
           <FreeformPageEditor backgroundColor={freeformBackground} elements={freeformElements} selectedId={selectedFreeformElementId} onSelect={setSelectedFreeformElementId} onChange={changeFreeformElements} onAddText={addFreeformText} onDelete={removeSelectedFreeformElement} style={slideStyle} />
         ) : selected?.type === "GROUP_PAGE" ? (
@@ -567,14 +590,14 @@ export default function EditorView() {
         ) : selected?.type === "PRIORITY_VOTE" ? (
           <div className="priority-page-canvas editor-slide-frame" style={slideStyle}><h1>{question || "Welche Ergebnisse sind am wichtigsten?"}</h1><div className="priority-editor-source"><Vote size={32} /><strong>Gruppenantworten werden hier priorisiert</strong><span>{prioritySourceNode ? `Aus Seite ${prioritySourceNode.position + 1}: ${prioritySourceNode.config.question || "Gruppendiskussion"}` : "Wählen Sie rechts eine Gruppendiskussion als Quelle."}</span><small>Während der Sitzung erscheint jede gespeicherte Gruppenantwort als eigener Punkt.</small></div><p className="priority-preview-note">Bis zu {priorityMaxVotes} {priorityMaxVotes === 1 ? "Stimme" : "Stimmen"} pro Person · Top {priorityMaxVisibleResults} auf der Leinwand · {resultDisplayMode === "LIVE" ? "Ergebnisse live" : "Ergebnisse nach Freigabe"}</p></div>
         ) : selected?.type === "RATING" ? (
-          ratingStatements.length > 1 ? <div className="multi-scale-canvas editor-slide-frame" style={slideStyle}><h1>{question || "Bewerten Sie die folgenden Aussagen"}</h1><div className="multi-scale-editor-list">{ratingStatements.map((statement, index) => <article key={index}><strong>{statement || `Aussage ${index + 1}`}</strong><div><i /><span style={{ left: `${((index + 1) / (ratingStatements.length + 1)) * 100}%` }}>{ratingMin + index % (ratingMax - ratingMin + 1)}</span></div></article>)}</div><footer><span>{ratingMinLabel}</span><b>{ratingMin}–{ratingMax} Punkte</b><span>{ratingMaxLabel}</span></footer></div> : <div className="poll-canvas rating-canvas editor-slide-frame" style={slideStyle}><div className="rating-canvas-center"><h1>{question || "Neue Skalenfrage"}</h1><p>Wählen Sie eine Bewertung</p><RatingScaleRail min={ratingMin} max={ratingMax} minLabel={ratingMinLabel} maxLabel={ratingMaxLabel} /></div></div>
+          ratingStatements.length > 1 ? <div className="multi-scale-canvas editor-slide-frame" style={slideStyle}><h1>{question || "Bewerten Sie die folgenden Aussagen"}</h1><div className="multi-scale-editor-list">{ratingStatements.map((statement, index) => <article key={index}><strong>{statement || `Aussage ${index + 1}`}</strong><div><i /><span style={{ left: `${((index + 1) / (ratingStatements.length + 1)) * 100}%` }}>{ratingMin + index % (ratingMax - ratingMin + 1)}</span></div></article>)}</div><footer><span>{ratingMinLabel}</span><b>{ratingMin}–{ratingMax} Punkte</b><span>{ratingMaxLabel}</span></footer></div> : <div className="poll-canvas rating-canvas editor-slide-frame" style={slideStyle}><div className="rating-canvas-center"><h1>{question || "Neue Skalenfrage"}</h1><RatingScaleRail min={ratingMin} max={ratingMax} minLabel={ratingMinLabel} maxLabel={ratingMaxLabel} /></div></div>
         ) : selected ? (
           <div className={`${assessmentMode === "QUIZ" ? "poll-canvas quiz-canvas" : "poll-canvas"} editor-slide-frame`} style={slideStyle}><h1>{question || "Neue Frage"}</h1><p>Eine Antwort auswählen</p><div className="canvas-options">{options.map((option, index) => <div className={assessmentMode === "QUIZ" && correctOptionIndex === index ? "correct" : ""} key={`${index}-${option}`}><span>{String.fromCharCode(65 + index)}</span>{option || `Option ${index + 1}`}{assessmentMode === "QUIZ" && correctOptionIndex === index && <Check size={16} />}</div>)}</div></div>
         ) : <div className="empty-canvas"><FileText size={34} /><p>Wählen Sie eine Seite aus.</p></div>}
       </main>
 
       <aside className="properties-panel">
-        <div className="panel-heading"><span>EIGENSCHAFTEN</span><strong>{selected?.type === "PDF_PAGE" ? "PDF-Seite" : selected?.type === "JOIN_PAGE" ? "Teilnahmeseite" : selected?.type === "CONTENT_PAGE" ? "Informationsseite" : selected?.type === "FREEFORM_PAGE" ? "Freie Seite" : selected?.type === "GROUP_PAGE" ? "Gruppen erstellen" : selected?.type === "GROUP_DISCUSSION" ? "Gruppendiskussion" : selected?.type === "GROUP_PRESENTATION" ? "Gruppenergebnisse" : selected?.type === "PRIORITY_VOTE" ? "Priorisierung" : selected?.type === "RATING" ? ratingStatements.length > 1 ? "Bewertungsskalen" : "Skala" : assessmentMode === "QUIZ" ? "Single Choice Quiz" : "Single Choice"}</strong></div>
+        <div className="panel-heading"><span>EIGENSCHAFTEN</span><strong>{selected?.type === "PDF_PAGE" ? "PDF-Seite" : selected?.type === "JOIN_PAGE" ? "Teilnahmeseite" : selected?.type === "CONTENT_PAGE" ? "Informationsseite" : selected?.type === "WEB_PAGE" ? "Webseite" : selected?.type === "FREEFORM_PAGE" ? "Freie Seite" : selected?.type === "GROUP_PAGE" ? "Gruppen erstellen" : selected?.type === "GROUP_DISCUSSION" ? "Gruppendiskussion" : selected?.type === "GROUP_PRESENTATION" ? "Gruppenergebnisse" : selected?.type === "PRIORITY_VOTE" ? "Priorisierung" : selected?.type === "RATING" ? ratingStatements.length > 1 ? "Bewertungsskalen" : "Skala" : assessmentMode === "QUIZ" ? "Single Choice Quiz" : "Single Choice"}</strong></div>
         {selected?.type === "PDF_PAGE" ? (
           <div className="pdf-properties"><FileText size={28} /><h3>Seite {selected.sourcePageNumber}</h3><p>{selected.config.originalName}</p><dl><div><dt>Typ</dt><dd>PDF</dd></div><div><dt>Position</dt><dd>{selected.position + 1}</dd></div></dl><p className="property-hint">Ziehen Sie diese Seite im Ablauf nach oben oder unten, um ihre Position zu ändern.</p></div>
         ) : selected?.type === "JOIN_PAGE" ? (
@@ -583,6 +606,15 @@ export default function EditorView() {
           <div className="content-properties">
             <label>Titel<textarea maxLength={180} value={contentTitle} onChange={(event) => { setContentTitle(event.target.value); setDirty(true); }} rows={3} /></label>
             <label>Text<textarea maxLength={5000} value={contentBody} onChange={(event) => { setContentBody(event.target.value); setDirty(true); }} rows={10} /></label>
+            <div className="property-actions"><button onClick={() => void duplicate()}><Copy size={16} /> Duplizieren</button><button className="danger" onClick={() => void remove()}><Trash2 size={16} /> Löschen</button></div>
+          </div>
+        ) : selected?.type === "WEB_PAGE" ? (
+          <div className="content-properties web-properties">
+            <label>Titel<input maxLength={180} value={webTitle} onChange={(event) => { setWebTitle(event.target.value); setDirty(true); }} /></label>
+            <label>Webadresse<input type="url" maxLength={2048} value={webUrl} aria-invalid={!isValidWebPageUrl(webUrl.trim())} onChange={(event) => { setWebUrl(event.target.value); setDirty(true); }} placeholder="https://example.com" /></label>
+            {!isValidWebPageUrl(webUrl.trim()) && <p className="web-url-error">Geben Sie eine vollständige Adresse mit http:// oder https:// ein.</p>}
+            <button type="button" className={webInteractive ? "web-interaction-setting active" : "web-interaction-setting"} aria-pressed={webInteractive} onClick={() => { setWebInteractive((value) => !value); setDirty(true); }}><Globe2 size={18} /><span><strong>Interaktive Webseite</strong><small>{webInteractive ? "Klicken und Scrollen sind während der Präsentation möglich." : "Die Seite wird nur als Vorschau angezeigt."}</small></span><i /></button>
+            <p className="property-hint">Einige Webseiten verbieten die Einbettung. In diesem Fall kann die Seite während der Präsentation über „Extern öffnen“ geöffnet werden.</p>
             <div className="property-actions"><button onClick={() => void duplicate()}><Copy size={16} /> Duplizieren</button><button className="danger" onClick={() => void remove()}><Trash2 size={16} /> Löschen</button></div>
           </div>
         ) : selected?.type === "FREEFORM_PAGE" ? (

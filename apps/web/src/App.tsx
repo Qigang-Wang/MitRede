@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent, type MouseEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent, type MouseEvent } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -10,7 +10,9 @@ import {
   CircleCheckBig,
   CircleHelp,
   Clock3,
+  Download,
   FileText,
+  FileUp,
   Fullscreen,
   Globe2,
   Eye,
@@ -57,6 +59,8 @@ import ResultsView from "./ResultsView";
 import EndSessionDialog from "./EndSessionDialog";
 import { PdfPageCanvas, usePdfPageAspectRatio } from "./PdfPage";
 import { FreeformPageRenderer } from "./FreeformPage";
+import { ContentPage } from "./ContentPage";
+import { WebPage } from "./WebPage";
 import { QRCodeSVG } from "qrcode.react";
 import { calculateRatingAverage, RatingDistribution, RatingScaleInput, RatingScaleRail } from "./RatingScale";
 
@@ -239,6 +243,9 @@ function Dashboard({ authUser, onLogout }: { authUser: AuthUser; onLogout: () =>
   const [deletePresentationTarget, setDeletePresentationTarget] = useState<PresentationSummary | null>(null);
   const [deletingPresentation, setDeletingPresentation] = useState(false);
   const [deletePresentationError, setDeletePresentationError] = useState("");
+  const [importingPresentation, setImportingPresentation] = useState(false);
+  const [exportingPresentationId, setExportingPresentationId] = useState<string | null>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     try {
@@ -274,13 +281,13 @@ function Dashboard({ authUser, onLogout }: { authUser: AuthUser; onLogout: () =>
 
   function openPresentationContext(event: MouseEvent, presentation: PresentationSummary) {
     event.preventDefault();
-    setPresentationContext({ presentation, x: Math.min(event.clientX, window.innerWidth - 224), y: Math.min(event.clientY, window.innerHeight - 78) });
+    setPresentationContext({ presentation, x: Math.min(event.clientX, window.innerWidth - 224), y: Math.min(event.clientY, window.innerHeight - 126) });
   }
 
   function openPresentationOptions(event: MouseEvent<HTMLButtonElement>, presentation: PresentationSummary) {
     event.stopPropagation();
     const bounds = event.currentTarget.getBoundingClientRect();
-    setPresentationContext({ presentation, x: Math.min(bounds.right - 214, window.innerWidth - 224), y: Math.min(bounds.bottom + 6, window.innerHeight - 78) });
+    setPresentationContext({ presentation, x: Math.min(bounds.right - 214, window.innerWidth - 224), y: Math.min(bounds.bottom + 6, window.innerHeight - 126) });
   }
 
   async function removePresentation() {
@@ -295,6 +302,36 @@ function Dashboard({ authUser, onLogout }: { authUser: AuthUser; onLogout: () =>
       setDeletePresentationError(caught instanceof Error ? caught.message : "Präsentation konnte nicht gelöscht werden");
     } finally {
       setDeletingPresentation(false);
+    }
+  }
+
+  async function importPresentation(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file || importingPresentation) return;
+    setImportingPresentation(true);
+    setError("");
+    try {
+      await api.importPresentation(file);
+      await load();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Präsentation konnte nicht importiert werden");
+    } finally {
+      setImportingPresentation(false);
+      event.target.value = "";
+    }
+  }
+
+  async function exportPresentation(presentation: PresentationSummary) {
+    if (exportingPresentationId) return;
+    setPresentationContext(null);
+    setExportingPresentationId(presentation.id);
+    setError("");
+    try {
+      await api.exportPresentation(presentation.id, presentation.title);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Präsentation konnte nicht exportiert werden");
+    } finally {
+      setExportingPresentationId(null);
     }
   }
 
@@ -321,7 +358,11 @@ function Dashboard({ authUser, onLogout }: { authUser: AuthUser; onLogout: () =>
       <main className="dashboard">
         <header className="topbar">
           <label className="search-box"><Search size={18} /><input aria-label="Präsentationen durchsuchen" placeholder="Präsentationen durchsuchen…" /><kbd>⌘ K</kbd></label>
-          <button className="btn btn-primary" onClick={() => setUploadOpen(true)}><Plus size={18} /> Neue Präsentation</button>
+          <div className="topbar-actions">
+            <input ref={importInputRef} hidden type="file" accept="application/json,.json,.mitrede.json" onChange={(event) => void importPresentation(event)} />
+            <button className="btn btn-secondary" type="button" disabled={importingPresentation} onClick={() => importInputRef.current?.click()}><FileUp size={17} /> {importingPresentation ? "Wird importiert…" : "Importieren"}</button>
+            <button className="btn btn-primary" type="button" onClick={() => setUploadOpen(true)}><Plus size={18} /> Neue Präsentation</button>
+          </div>
         </header>
 
         <section className="welcome">
@@ -352,7 +393,7 @@ function Dashboard({ authUser, onLogout }: { authUser: AuthUser; onLogout: () =>
         <section className="next-session" id="sessions"><div className="session-date"><strong>LIVE</strong><span>BEREIT</span></div><div className="session-info"><span className="status-pill">ECHTZEIT</span><h3>Eine Präsentation starten</h3><p>Mit Raumcode, anonymer Teilnahme und Live-Ergebnissen</p></div><div className="session-people"><span>QR</span><span>WS</span><span>+?</span></div><button className="btn btn-secondary" onClick={() => setUploadOpen(true)}>Vorbereiten <ChevronRight size={17} /></button></section>
       </main>
       {uploadOpen && <UploadDialog onClose={() => setUploadOpen(false)} onCreated={load} />}
-      {presentationContext && <div className="session-context-layer" role="presentation" onMouseDown={() => setPresentationContext(null)} onContextMenu={(event) => { event.preventDefault(); setPresentationContext(null); }}><div className="session-context-menu presentation-context-menu" role="menu" style={{ left: presentationContext.x, top: presentationContext.y }} onMouseDown={(event) => event.stopPropagation()}><header>{presentationContext.presentation.title}</header><button className="danger" role="menuitem" onClick={() => { setDeletePresentationError(""); setDeletePresentationTarget(presentationContext.presentation); setPresentationContext(null); }}><Trash2 size={15} /><span>Präsentation löschen</span></button></div></div>}
+      {presentationContext && <div className="session-context-layer" role="presentation" onMouseDown={() => setPresentationContext(null)} onContextMenu={(event) => { event.preventDefault(); setPresentationContext(null); }}><div className="session-context-menu presentation-context-menu" role="menu" style={{ left: presentationContext.x, top: presentationContext.y }} onMouseDown={(event) => event.stopPropagation()}><header>{presentationContext.presentation.title}</header><button role="menuitem" disabled={exportingPresentationId === presentationContext.presentation.id} onClick={() => void exportPresentation(presentationContext.presentation)}><Download size={15} /><span>{exportingPresentationId === presentationContext.presentation.id ? "Wird exportiert…" : "Präsentation exportieren"}</span></button><button className="danger" role="menuitem" onClick={() => { setDeletePresentationError(""); setDeletePresentationTarget(presentationContext.presentation); setPresentationContext(null); }}><Trash2 size={15} /><span>Präsentation löschen</span></button></div></div>}
       {deletePresentationTarget && <EndSessionDialog action="delete" subject="presentation" title={deletePresentationTarget.title} roomCode="" busy={deletingPresentation} error={deletePresentationError} onCancel={() => { setDeletePresentationTarget(null); setDeletePresentationError(""); }} onConfirm={() => void removePresentation()} />}
     </div>
   );
@@ -411,7 +452,7 @@ function SingleScaleProjection({ snapshot, width, height }: { snapshot: SessionS
   const min = Number(options[0] ?? snapshot.currentNode?.config.min ?? 1);
   const max = Number(options.at(-1) ?? snapshot.currentNode?.config.max ?? 5);
   const average = snapshot.resultsVisible ? calculateRatingAverage(options, snapshot.results.counts, snapshot.results.total) : null;
-  return <div className="stage projection-single-scale" style={{ width, height }}><div><h1>{snapshot.currentNode?.config.question || "Wie bewerten Sie diese Aussage?"}</h1><p>{snapshot.resultsVisible ? "Durchschnittliche Bewertung" : "Wählen Sie eine Bewertung"}</p><RatingScaleRail min={min} max={max} minLabel={snapshot.currentNode?.config.minLabel} maxLabel={snapshot.currentNode?.config.maxLabel} value={average} valuePrefix={average === null ? "" : "Ø "} counts={snapshot.resultsVisible ? snapshot.results.counts : undefined} /></div><p className="answer-count"><Check size={16} /> {snapshot.results.total} {snapshot.results.total === 1 ? "Bewertung" : "Bewertungen"} eingegangen</p></div>;
+  return <div className="stage projection-single-scale" style={{ width, height }}><div><h1>{snapshot.currentNode?.config.question || "Wie bewerten Sie diese Aussage?"}</h1>{snapshot.resultsVisible && <p>Durchschnittliche Bewertung</p>}<RatingScaleRail min={min} max={max} minLabel={snapshot.currentNode?.config.minLabel} maxLabel={snapshot.currentNode?.config.maxLabel} value={average} valuePrefix={average === null ? "" : "Ø "} counts={snapshot.resultsVisible ? snapshot.results.counts : undefined} /></div><p className="answer-count"><Check size={16} /> {snapshot.results.total} {snapshot.results.total === 1 ? "Bewertung" : "Bewertungen"} eingegangen</p></div>;
 }
 
 function GroupProjection({ snapshot, width, height }: { snapshot: SessionSnapshot; width: number; height: number }) {
@@ -611,6 +652,7 @@ function PresenterView() {
   const isPdf = snapshot.currentNode?.type === "PDF_PAGE";
   const isJoinPage = snapshot.currentNode?.type === "JOIN_PAGE";
   const isContentPage = snapshot.currentNode?.type === "CONTENT_PAGE";
+  const isWebPage = snapshot.currentNode?.type === "WEB_PAGE";
   const isFreeformPage = snapshot.currentNode?.type === "FREEFORM_PAGE";
   const isGroupPage = snapshot.currentNode?.type === "GROUP_PAGE";
   const isGroupDiscussion = snapshot.currentNode?.type === "GROUP_DISCUSSION";
@@ -624,16 +666,25 @@ function PresenterView() {
   const joinUrl = `${publicBaseUrl}/join/${snapshot.roomCode}`;
   const publicHost = (() => { try { return new URL(publicBaseUrl).host; } catch { return window.location.host; } })();
   const roomCode = `${snapshot.roomCode.slice(0, 3)} ${snapshot.roomCode.slice(3)}`;
+  const participantCount = snapshot.participantCount ?? 0;
 
   return (
     <div className={["projection-shell", controlsVisible || consoleOpen ? "controls-visible" : "controls-hidden", cursorVisible ? "" : "cursor-hidden", laserEnabled ? "laser-active" : ""].filter(Boolean).join(" ")} onMouseMove={(event) => { registerPointerActivity(); if (laserEnabled) setLaserPoint({ x: event.clientX, y: event.clientY }); }}>
       <main className="projection-stage" onClick={() => { if (!laserEnabled && !blackout && !consoleOpen) move(1); }}>
-        {!isJoinPage && (isPdf && poll?.objectKey && poll.pageNumber ? <div className="presented-pdf projection-pdf"><PdfPageCanvas objectKey={poll.objectKey} pageNumber={poll.pageNumber} fitContainer /></div> : isContentPage ? <div className="stage projection-content" style={{ width: slideWidth, height: slideHeight }}><h1>{poll?.title || "Neue Informationsseite"}</h1><p className="projection-content-body">{poll?.body || "Ergänzen Sie hier Ihre Inhalte."}</p></div> : isFreeformPage ? <FreeformPageRenderer config={poll ?? {}} className="projection-freeform" style={{ width: slideWidth, height: slideHeight }} /> : isGroupPage ? <GroupProjection snapshot={snapshot} width={slideWidth} height={slideHeight} /> : isGroupDiscussion ? <GroupDiscussionProjection snapshot={snapshot} width={slideWidth} height={slideHeight} /> : isGroupPresentation ? <GroupPresentationProjection snapshot={snapshot} width={slideWidth} height={slideHeight} /> : isPriorityPage ? <PriorityProjection snapshot={snapshot} width={slideWidth} height={slideHeight} /> : isMultiScale ? <MultiScaleProjection snapshot={snapshot} width={slideWidth} height={slideHeight} /> : isSingleScale ? <SingleScaleProjection snapshot={snapshot} width={slideWidth} height={slideHeight} /> : <div className="stage projection-poll" style={{ width: slideWidth, height: slideHeight }}><h1>{poll?.question ?? "Keine aktuelle Frage"}</h1><p className="stage-subtitle">Eine Antwort auswählen</p>{snapshot.resultsVisible ? <SessionResultDisplay options={poll?.options ?? []} counts={snapshot.results.counts} total={total} rating={false} correctOptionIndex={isQuiz ? poll?.correctOptionIndex : undefined} /> : <div className="results-hidden"><BarChart3 size={34} /><strong>Antworten werden gesammelt</strong><span>Die Ergebnisse erscheinen nach der Freigabe.</span></div>}<p className="answer-count"><Check size={16} /> {total} Antworten eingegangen</p></div>)}
+        {!isJoinPage && (isPdf && poll?.objectKey && poll.pageNumber ? <div className="presented-pdf projection-pdf"><PdfPageCanvas objectKey={poll.objectKey} pageNumber={poll.pageNumber} fitContainer /></div> : isContentPage ? <ContentPage title={poll?.title} body={poll?.body} className="projection-content" style={{ width: slideWidth, height: slideHeight }} /> : isWebPage ? <WebPage title={poll?.title} url={poll?.url} interactive={poll?.interactive ?? true} className="projection-web-page" style={{ width: slideWidth, height: slideHeight }} /> : isFreeformPage ? <FreeformPageRenderer config={poll ?? {}} className="projection-freeform" style={{ width: slideWidth, height: slideHeight }} /> : isGroupPage ? <GroupProjection snapshot={snapshot} width={slideWidth} height={slideHeight} /> : isGroupDiscussion ? <GroupDiscussionProjection snapshot={snapshot} width={slideWidth} height={slideHeight} /> : isGroupPresentation ? <GroupPresentationProjection snapshot={snapshot} width={slideWidth} height={slideHeight} /> : isPriorityPage ? <PriorityProjection snapshot={snapshot} width={slideWidth} height={slideHeight} /> : isMultiScale ? <MultiScaleProjection snapshot={snapshot} width={slideWidth} height={slideHeight} /> : isSingleScale ? <SingleScaleProjection snapshot={snapshot} width={slideWidth} height={slideHeight} /> : <div className="stage projection-poll" style={{ width: slideWidth, height: slideHeight }}><h1>{poll?.question ?? "Keine aktuelle Frage"}</h1><p className="stage-subtitle">Eine Antwort auswählen</p>{snapshot.resultsVisible ? <SessionResultDisplay options={poll?.options ?? []} counts={snapshot.results.counts} total={total} rating={false} correctOptionIndex={isQuiz ? poll?.correctOptionIndex : undefined} /> : <div className="results-hidden"><BarChart3 size={34} /><strong>Antworten werden gesammelt</strong><span>Die Ergebnisse erscheinen nach der Freigabe.</span></div>}<p className="answer-count"><Check size={16} /> {total} Antworten eingegangen</p></div>)}
       </main>
-      {!blackout && <aside className="projection-room"><QrCode size={23} /><span>TEILNEHMEN</span><strong>{roomCode}</strong><small>{joinUrl}</small></aside>}
       {(isJoinPage || joinScreenVisible) && !blackout && <section className="projection-join-screen" aria-label="Teilnahmeseite" onClick={() => { if (isJoinPage) move(1); else setJoinScreenVisible(false); }}>
         <div className="projection-join-card" onClick={(event) => event.stopPropagation()}>
-          <div className="projection-join-intro"><h1>Jetzt teilnehmen</h1><p>QR-Code scannen oder Webadresse im Browser öffnen.</p><strong className="projection-join-domain">{publicHost}</strong></div>
+          <div className="projection-join-intro">
+            <h1>Jetzt teilnehmen</h1>
+            <p>QR-Code scannen oder Webadresse im Browser öffnen.</p>
+            <strong className="projection-join-domain">{publicHost}</strong>
+            <div className="projection-join-participants" aria-live="polite" aria-atomic="true">
+              <UsersRound aria-hidden="true" />
+              <strong>{participantCount}</strong>
+              <span>{participantCount === 1 ? "Person beigetreten" : "Personen beigetreten"}</span>
+            </div>
+          </div>
           <div className="projection-join-access-card"><div className="projection-join-qr"><QRCodeSVG value={joinUrl} size={440} level="M" marginSize={1} title="QR-Code zur Teilnahme" /></div><div className="projection-join-code"><span>RAUMCODE</span><strong>{roomCode}</strong></div></div>
         </div>
         <button className="projection-join-start" onClick={() => { if (isJoinPage) move(1); else setJoinScreenVisible(false); }}>Klicken oder → zum Fortfahren</button>
@@ -830,7 +881,7 @@ function JoinView() {
   if (!participantReady) return <div className="join-shell"><header className="join-topbar"><Brand /><span><i /> Raum gefunden</span></header><form className="join-name-card" onSubmit={confirmParticipantName}><UsersRound size={38} /><p className="eyebrow">RAUM {snapshot.roomCode.slice(0, 3)} {snapshot.roomCode.slice(3)}</p><h1>Wie heißen Sie?</h1><label>Name<input autoFocus maxLength={40} value={participantName} onChange={(event) => setParticipantName(event.target.value)} placeholder="Vorname oder Anzeigename" /></label>{error && <p className="form-error">{error}</p>}<button className="btn btn-primary" disabled={sending || !participantName.trim()}>{sending ? "Wird verbunden…" : "Raum beitreten"}</button></form></div>;
   const options = snapshot.currentNode?.config.options ?? [];
   const accepting = snapshot.interactionStatus === "ACCEPTING";
-  const waitingForPresentation = snapshot.currentNode?.type === "PDF_PAGE" || snapshot.currentNode?.type === "JOIN_PAGE" || snapshot.currentNode?.type === "CONTENT_PAGE" || snapshot.currentNode?.type === "FREEFORM_PAGE";
+  const waitingForPresentation = snapshot.currentNode?.type === "PDF_PAGE" || snapshot.currentNode?.type === "JOIN_PAGE" || snapshot.currentNode?.type === "CONTENT_PAGE" || snapshot.currentNode?.type === "WEB_PAGE" || snapshot.currentNode?.type === "FREEFORM_PAGE";
   const isGroupPage = snapshot.currentNode?.type === "GROUP_PAGE";
   const isGroupDiscussion = snapshot.currentNode?.type === "GROUP_DISCUSSION";
   const isGroupPresentation = snapshot.currentNode?.type === "GROUP_PRESENTATION";
@@ -877,7 +928,7 @@ function JoinView() {
           {error && <p className="form-error">{error}</p>}<p className="privacy-note">Sie können Ihre Bewertungen ändern, solange die Interaktion geöffnet ist.</p>
         </> : <>
           <h1>{snapshot.currentNode?.config.question ?? "Warten auf die nächste Frage"}</h1>
-          <p>{accepting ? isRating ? "Wählen Sie eine Bewertung." : "Wählen Sie eine Antwort." : "Diese Frage ist derzeit gesperrt."}</p>
+          {(!isRating || !accepting) && <p>{accepting ? "Wählen Sie eine Antwort." : "Diese Frage ist derzeit gesperrt."}</p>}
           {isRating ? <RatingScaleInput options={options} selectedIndex={selected} minLabel={snapshot.currentNode?.config.minLabel} maxLabel={snapshot.currentNode?.config.maxLabel} disabled={!accepting} onChange={(index) => { setSelected(index); setSubmitted(false); }} /> : <div className="join-options">{options.map((option, index) => <button className={selected === index ? "join-option selected" : "join-option"} key={option} disabled={!accepting} onClick={() => { setSelected(index); setSubmitted(false); }}><span>{String.fromCharCode(65 + index)}</span>{option}{selected === index && <Check size={20} />}</button>)}</div>}
           <button className="btn btn-primary submit-answer" disabled={!accepting || selected === null || sending} onClick={() => void submit()}>{submitted ? <><Check size={19} /> {isRating ? "Bewertung gespeichert" : "Antwort gespeichert"}</> : sending ? "Wird gespeichert…" : isRating ? "Bewertung senden" : "Antwort senden"}</button>
           {submitted && isQuiz && snapshot.resultsVisible && correctOptionIndex !== undefined && selected !== null && <div className={selected === correctOptionIndex ? "quiz-feedback correct" : "quiz-feedback incorrect"}><strong>{selected === correctOptionIndex ? "Richtig!" : "Nicht ganz."}</strong>{selected !== correctOptionIndex && <span>Richtig ist: {options[correctOptionIndex]}</span>}</div>}

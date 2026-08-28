@@ -2,16 +2,17 @@ import { useEffect, useRef, useState, type CSSProperties, type MouseEvent } from
 import Moveable from "react-moveable";
 import { Image as ImageIcon, Type } from "lucide-react";
 import { imageAssetUrl, type FreeformElement, type PollConfig } from "./api";
+import { ScaledSlideFrame, SLIDE_HEIGHT, SLIDE_WIDTH } from "./ScaledSlideFrame";
 
-export const FREEFORM_WIDTH = 1600;
-export const FREEFORM_HEIGHT = 900;
+export const FREEFORM_WIDTH = SLIDE_WIDTH;
+export const FREEFORM_HEIGHT = SLIDE_HEIGHT;
 
 function elementStyle(element: FreeformElement): CSSProperties {
   return {
-    left: `${element.x / FREEFORM_WIDTH * 100}%`,
-    top: `${element.y / FREEFORM_HEIGHT * 100}%`,
-    width: `${element.width / FREEFORM_WIDTH * 100}%`,
-    height: `${element.height / FREEFORM_HEIGHT * 100}%`,
+    left: element.x,
+    top: element.y,
+    width: element.width,
+    height: element.height,
   };
 }
 
@@ -56,7 +57,7 @@ function FreeformElementView({ element, editable, selected, editing, onSelect, o
               selection?.collapseToEnd();
             }
           }}
-          style={{ fontSize: `${element.fontSize / 16}cqw`, color: element.color, fontWeight: element.fontWeight, fontStyle: element.fontStyle, textAlign: element.textAlign }}
+          style={{ fontSize: element.fontSize, color: element.color, fontWeight: element.fontWeight, fontStyle: element.fontStyle, textAlign: element.textAlign }}
         >
           {textContent}
         </div>
@@ -69,10 +70,11 @@ function FreeformElementView({ element, editable, selected, editing, onSelect, o
 
 export function FreeformPageRenderer({ config, className = "", style }: { config: PollConfig; className?: string; style?: CSSProperties }) {
   const elements = config.elements ?? [];
+  const backgroundColor = config.backgroundColor ?? "#fffaf1";
   return (
-    <div className={`freeform-page ${className}`} style={{ ...style, backgroundColor: config.backgroundColor ?? "#fffaf1" }}>
+    <ScaledSlideFrame className={`freeform-page ${className}`} surfaceClassName="freeform-page-surface" backgroundColor={backgroundColor} style={style}>
       {elements.map((element) => <FreeformElementView element={element} editable={false} key={element.id} />)}
-    </div>
+    </ScaledSlideFrame>
   );
 }
 
@@ -86,19 +88,20 @@ export function FreeformPageEditor({ backgroundColor, elements, selectedId, onSe
   onDelete: () => void;
   style?: CSSProperties;
 }) {
-  const pageRef = useRef<HTMLDivElement>(null);
+  const surfaceRef = useRef<HTMLDivElement>(null);
   const moveableRef = useRef<Moveable>(null);
   const [target, setTarget] = useState<HTMLElement | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [canvasScale, setCanvasScale] = useState(0);
 
   useEffect(() => {
-    setTarget(selectedId ? pageRef.current?.querySelector<HTMLElement>(`[data-freeform-id="${CSS.escape(selectedId)}"]`) ?? null : null);
+    setTarget(selectedId ? surfaceRef.current?.querySelector<HTMLElement>(`[data-freeform-id="${CSS.escape(selectedId)}"]`) ?? null : null);
   }, [elements, selectedId]);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => moveableRef.current?.updateRect());
     return () => window.cancelAnimationFrame(frame);
-  }, [elements, target]);
+  }, [canvasScale, elements, target]);
 
   useEffect(() => {
     const handleDelete = (event: KeyboardEvent) => {
@@ -112,7 +115,7 @@ export function FreeformPageEditor({ backgroundColor, elements, selectedId, onSe
   }, [editingId, onDelete, selectedId]);
 
   function commitTarget(element: HTMLElement | SVGElement) {
-    const page = pageRef.current;
+    const page = surfaceRef.current;
     if (!page || !selectedId) return;
     const pageRect = page.getBoundingClientRect();
     const elementRect = element.getBoundingClientRect();
@@ -120,16 +123,16 @@ export function FreeformPageEditor({ backgroundColor, elements, selectedId, onSe
     const height = Math.min(FREEFORM_HEIGHT, Math.max(20, elementRect.height / pageRect.height * FREEFORM_HEIGHT));
     const x = Math.min(FREEFORM_WIDTH - width, Math.max(0, (elementRect.left - pageRect.left) / pageRect.width * FREEFORM_WIDTH));
     const y = Math.min(FREEFORM_HEIGHT - height, Math.max(0, (elementRect.top - pageRect.top) / pageRect.height * FREEFORM_HEIGHT));
-    element.style.left = `${x / FREEFORM_WIDTH * 100}%`;
-    element.style.top = `${y / FREEFORM_HEIGHT * 100}%`;
-    element.style.width = `${width / FREEFORM_WIDTH * 100}%`;
-    element.style.height = `${height / FREEFORM_HEIGHT * 100}%`;
+    element.style.left = `${x}px`;
+    element.style.top = `${y}px`;
+    element.style.width = `${width}px`;
+    element.style.height = `${height}px`;
     element.style.transform = "";
     onChange(elements.map((item) => item.id === selectedId ? { ...item, x, y, width, height } : item));
   }
 
   function deselect(event: MouseEvent<HTMLDivElement>) {
-    if (event.target === event.currentTarget) {
+    if (!(event.target instanceof HTMLElement) || !event.target.closest(".freeform-element")) {
       setEditingId(null);
       onSelect(null);
     }
@@ -141,30 +144,30 @@ export function FreeformPageEditor({ backgroundColor, elements, selectedId, onSe
   }
 
   return (
-    <div ref={pageRef} className="freeform-page freeform-editor" style={{ ...style, backgroundColor }} onMouseDown={deselect}>
+    <ScaledSlideFrame className="freeform-page freeform-editor" surfaceClassName="freeform-page-surface" backgroundColor={backgroundColor} style={style} surfaceRef={surfaceRef} onMouseDown={deselect} onScaleChange={setCanvasScale}>
       {elements.length === 0 && <div className="freeform-empty"><button type="button" onMouseDown={(event) => event.stopPropagation()} onClick={onAddText}><Type size={26} /><strong>Textfeld hinzufügen</strong><span>Danach frei ziehen und skalieren</span></button><div><ImageIcon size={28} /><span>Oder über „Bild“ ein Bild hochladen</span></div></div>}
       {elements.map((element) => <FreeformElementView element={element} editable selected={element.id === selectedId} editing={element.id === editingId} onSelect={(id) => { setEditingId(null); onSelect(id); }} onStartEdit={setEditingId} onTextCommit={commitText} key={element.id} />)}
       {target && <Moveable
-        ref={moveableRef}
-        target={target}
-        draggable={!editingId}
-        resizable={!editingId}
-        useAccuratePosition
-        useResizeObserver
-        useMutationObserver
-        keepRatio={elements.find((element) => element.id === selectedId)?.type === "IMAGE"}
-        edge={false}
-        throttleDrag={0}
-        throttleResize={0}
-        onDrag={({ target: moved, transform }) => { moved.style.transform = transform; }}
-        onDragEnd={({ target: moved }) => commitTarget(moved)}
-        onResize={({ target: resized, width, height, drag }) => {
-          resized.style.width = `${width}px`;
-          resized.style.height = `${height}px`;
-          resized.style.transform = drag.transform;
-        }}
-        onResizeEnd={({ target: resized }) => commitTarget(resized)}
+          ref={moveableRef}
+          target={target}
+          draggable={!editingId}
+          resizable={!editingId}
+          useAccuratePosition
+          useResizeObserver
+          useMutationObserver
+          keepRatio={elements.find((element) => element.id === selectedId)?.type === "IMAGE"}
+          edge={false}
+          throttleDrag={0}
+          throttleResize={0}
+          onDrag={({ target: moved, transform }) => { moved.style.transform = transform; }}
+          onDragEnd={({ target: moved }) => commitTarget(moved)}
+          onResize={({ target: resized, width, height, drag }) => {
+            resized.style.width = `${width}px`;
+            resized.style.height = `${height}px`;
+            resized.style.transform = drag.transform;
+          }}
+          onResizeEnd={({ target: resized }) => commitTarget(resized)}
       />}
-    </div>
+    </ScaledSlideFrame>
   );
 }

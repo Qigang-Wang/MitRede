@@ -9,6 +9,7 @@ import {
   EyeOff,
   FileText,
   Fullscreen,
+  Globe2,
   Lock,
   LogOut,
   MessageCircleMore,
@@ -30,6 +31,8 @@ import {
 } from "lucide-react";
 import { api, connectToSession, type PresentationDetails, type PresentationNode, type SessionSnapshot } from "./api";
 import { FreeformPageRenderer } from "./FreeformPage";
+import { ContentPage } from "./ContentPage";
+import { WebPage } from "./WebPage";
 import { PdfPageCanvas, usePdfPageAspectRatio } from "./PdfPage";
 import { QRCodeSVG } from "qrcode.react";
 import { calculateRatingAverage, RatingDistribution, RatingScaleInput, RatingScaleRail } from "./RatingScale";
@@ -93,11 +96,6 @@ function previewPresentationId() {
 function go(path: string) {
   window.history.pushState({}, "", path);
   window.dispatchEvent(new PopStateEvent("popstate"));
-}
-
-function seedCounts(optionCount: number) {
-  const samples = [8, 5, 3, 2, 1, 1, 0, 0];
-  return Array.from({ length: optionCount }, (_, index) => samples[index] ?? 0);
 }
 
 function ResultBars({ options, counts, compact = false, rating = false, correctOptionIndex }: { options: string[]; counts: number[]; compact?: boolean; rating?: boolean; correctOptionIndex?: number }) {
@@ -171,6 +169,7 @@ function PhonePreview({
   const isPdf = node?.type === "PDF_PAGE";
   const isJoinPage = node?.type === "JOIN_PAGE";
   const isContentPage = node?.type === "CONTENT_PAGE";
+  const isWebPage = node?.type === "WEB_PAGE";
   const isFreeformPage = node?.type === "FREEFORM_PAGE";
   const isGroupPage = node?.type === "GROUP_PAGE";
   const isGroupDiscussion = node?.type === "GROUP_DISCUSSION";
@@ -203,10 +202,10 @@ function PhonePreview({
             <div className="preview-phone-group"><h2>{node?.config.question}</h2><p>{node?.config.prompt}</p><div>{groupSimulation.groups.map((group) => <article className={group.id === groupSimulation.currentGroupId ? "current" : ""} key={group.id}><UsersRound size={15} /><strong>{group.name}</strong><small title={group.members.map((member) => member.name).join(", ")}>{group.members.length} {group.members.length === 1 ? "Mitglied" : "Mitglieder"} · {group.members.map((member) => member.name).join(", ")}</small><button className={group.id === groupSimulation.currentGroupId ? "leave" : ""} disabled={status !== "ACCEPTING"} onClick={() => group.id === groupSimulation.currentGroupId ? groupSimulation.onLeave() : groupSimulation.onJoin(group.id)}>{group.id === groupSimulation.currentGroupId ? <><LogOut size={12} /> Verlassen</> : "Beitreten"}</button></article>)}</div>{groupSimulation.formOpen ? <form className="preview-group-create-form" onSubmit={(event) => { event.preventDefault(); groupSimulation.onCreate(); }}><label>Ihr Name<input maxLength={40} value={groupSimulation.participantName} onChange={(event) => groupSimulation.onParticipantNameChange(event.target.value)} /></label><label>Gruppenname<input autoFocus maxLength={60} value={groupSimulation.groupName} onChange={(event) => groupSimulation.onGroupNameChange(event.target.value)} placeholder="z. B. Team Gelb" /></label>{groupSimulation.error && <p>{groupSimulation.error}</p>}<div><button type="button" onClick={groupSimulation.onToggleForm}>Abbrechen</button><button type="submit" disabled={status !== "ACCEPTING" || !groupSimulation.groupName.trim()}>Erstellen</button></div></form> : <button className="preview-create-group" disabled={status !== "ACCEPTING" || groupSimulation.groups.length >= groupSimulation.maxGroups} onClick={groupSimulation.onToggleForm}><UserPlus size={14} /> Eigene Gruppe erstellen</button>}</div>
           ) : isGroupDiscussion ? (
             <div className="preview-phone-discussion"><h2>{node?.config.question}</h2>{discussionTimer && <div className={discussionSeconds === 0 ? "preview-phone-discussion-timer expired" : "preview-phone-discussion-timer"}><Clock3 size={14} /><strong>{String(Math.floor(discussionSeconds / 60)).padStart(2, "0")}:{String(discussionSeconds % 60).padStart(2, "0")}</strong><small>{discussionTimer.running ? "Verbleibende Zeit" : discussionSeconds === 0 ? "Zeit abgelaufen" : "Pausiert"}</small></div>}{currentPreviewGroup ? <><header><UsersRound size={15} /><div><strong>{currentPreviewGroup.name}</strong><small>{currentPreviewGroup.members.map((member) => member.name).join(" · ")}</small></div><b className={currentPreviewGroup.completed ? "done" : ""}>{currentPreviewGroup.completed ? "Fertig" : "In Arbeit"}</b></header><label>Antworten Ihrer Gruppe</label><div className="preview-discussion-answers">{currentPreviewGroup.answers.map((answer, index) => <div key={index}><span>{index + 1}</span><textarea rows={2} disabled={status !== "ACCEPTING"} value={answer} onChange={(event) => groupSimulation.onAnswersChange(currentPreviewGroup.answers.map((item, itemIndex) => itemIndex === index ? event.target.value : item))} /><button disabled={currentPreviewGroup.answers.length === 1} onClick={() => groupSimulation.onAnswersChange(currentPreviewGroup.answers.filter((_, itemIndex) => itemIndex !== index))}><Trash2 size={11} /></button></div>)}</div>{(discussionMaxAnswers === 0 || currentPreviewGroup.answers.length < discussionMaxAnswers) && <button className="preview-discussion-add" onClick={() => groupSimulation.onAnswersChange([...currentPreviewGroup.answers, ""])}><Plus size={11} /> Antwort</button>}<div className="preview-discussion-actions"><button><Save size={12} /> Speichern</button><button className={currentPreviewGroup.completed ? "done" : ""} onClick={() => groupSimulation.onCompletedChange(!currentPreviewGroup.completed)}><Check size={12} /> {currentPreviewGroup.completed ? "Weiter" : "Fertig"}</button></div></> : <div className="preview-discussion-missing"><UsersRound size={24} /><strong>Keine Gruppe ausgewählt</strong></div>}</div>
-          ) : isPdf || isJoinPage || isContentPage || isFreeformPage ? (
+          ) : isPdf || isJoinPage || isContentPage || isWebPage || isFreeformPage ? (
             <div className="preview-phone-wait">
-              {isJoinPage ? <QrCode size={34} /> : <FileText size={34} />}
-              <span>{isJoinPage ? "BEREIT ZUR TEILNAHME" : isContentPage || isFreeformPage ? "INHALT AUF DER LEINWAND" : "PRÄSENTATION LÄUFT"}</span>
+              {isJoinPage ? <QrCode size={34} /> : isWebPage ? <Globe2 size={34} /> : <FileText size={34} />}
+              <span>{isJoinPage ? "BEREIT ZUR TEILNAHME" : isWebPage ? "WEBSEITE AUF DER LEINWAND" : isContentPage || isFreeformPage ? "INHALT AUF DER LEINWAND" : "PRÄSENTATION LÄUFT"}</span>
               <h2>{isJoinPage ? "Scannen Sie den QR-Code auf der Leinwand." : "Folgen Sie der Präsentation auf der Leinwand."}</h2>
               <p>{isJoinPage ? "Danach erscheinen Fragen automatisch hier." : "Die nächste Interaktion erscheint automatisch hier."}</p>
             </div>
@@ -238,7 +237,7 @@ function PhonePreview({
           ) : (
             <div className="preview-phone-poll">
               <h2>{node?.config.question ?? "Neue Frage"}</h2>
-              <p>{isRating ? "Wählen Sie eine Bewertung" : "Eine Antwort auswählen"}</p>
+              {!isRating && <p>Eine Antwort auswählen</p>}
               {isRating ? <RatingScaleInput options={options} selectedIndex={selectedOption} minLabel={node?.config.minLabel} maxLabel={node?.config.maxLabel} ariaLabel={node?.config.question ?? "Bewertung"} onChange={onSelect} /> : <div className="preview-phone-options">{options.map((option, index) => <button className={selectedOption === index ? "selected" : ""} key={`${index}-${option}`} onClick={() => onSelect(index)}><span>{String.fromCharCode(65 + index)}</span><strong>{option}</strong>{selectedOption === index && <Check size={16} />}</button>)}</div>}
               <button className="btn btn-primary preview-phone-submit" disabled={selectedOption === null} onClick={onSubmit}>Antwort senden</button>
             </div>
@@ -320,12 +319,13 @@ export default function PreviewView() {
   const isPdf = currentNode?.type === "PDF_PAGE";
   const isJoinPage = currentNode?.type === "JOIN_PAGE";
   const isContentPage = currentNode?.type === "CONTENT_PAGE";
+  const isWebPage = currentNode?.type === "WEB_PAGE";
   const isFreeformPage = currentNode?.type === "FREEFORM_PAGE";
   const isGroupPage = currentNode?.type === "GROUP_PAGE";
   const isGroupDiscussion = currentNode?.type === "GROUP_DISCUSSION";
   const isGroupPresentation = currentNode?.type === "GROUP_PRESENTATION";
   const isPriorityPage = currentNode?.type === "PRIORITY_VOTE";
-  const isStaticPage = isPdf || isJoinPage || isContentPage || isFreeformPage;
+  const isStaticPage = isPdf || isJoinPage || isContentPage || isWebPage || isFreeformPage;
   const isRating = currentNode?.type === "RATING";
   const isMultiScale = isRating && (currentNode?.config.statements?.length ?? 0) > 1;
   const isQuiz = currentNode?.config.assessmentMode === "QUIZ";
@@ -383,7 +383,7 @@ export default function PreviewView() {
     setPreviewPrioritySubmittedIds([]);
     setPreviewScaleSelections([]);
     setPreviewScaleSubmittedValues([]);
-    setCounts(seedCounts(options.length));
+    setCounts(Array.from({ length: options.length }, () => 0));
     if (currentNode) {
       window.history.replaceState({}, "", `/preview/${presentationId}?node=${encodeURIComponent(currentNode.id)}`);
       if (previewSession?.sessionId && previewSession.currentNode?.id !== currentNode.id) {
@@ -553,14 +553,31 @@ export default function PreviewView() {
 
       <main className={phoneVisible ? "preview-workspace" : "preview-workspace phone-hidden"}>
         <section className="preview-projector-column">
-          <div className="preview-column-heading"><span>PROJEKTIONSANSICHT</span><small>{isPdf ? `PDF · Seite ${currentNode?.sourcePageNumber}` : isJoinPage ? "Teilnahmeseite" : isContentPage ? "Informationsseite" : isFreeformPage ? "Freie Seite" : isGroupPage ? "Gruppen erstellen" : isGroupDiscussion ? "Gruppendiskussion" : isGroupPresentation ? "Gruppenergebnisse" : isPriorityPage ? "Priorisierung" : status === "ACCEPTING" ? "Antworten offen" : status === "LOCKED" ? "Antworten gesperrt" : "Noch nicht geöffnet"}</small></div>
-          <div className={`preview-projector ${isPdf ? "is-pdf" : isJoinPage ? "is-join" : isContentPage ? "is-content" : isFreeformPage ? "is-freeform" : isGroupPage || isGroupDiscussion || isGroupPresentation ? "is-group" : isPriorityPage ? "is-priority" : "is-poll"}`} ref={projectorRef}>
+          <div className="preview-column-heading"><span>PROJEKTIONSANSICHT</span><small>{isPdf ? `PDF · Seite ${currentNode?.sourcePageNumber}` : isJoinPage ? "Teilnahmeseite" : isContentPage ? "Informationsseite" : isWebPage ? "Webseite" : isFreeformPage ? "Freie Seite" : isGroupPage ? "Gruppen erstellen" : isGroupDiscussion ? "Gruppendiskussion" : isGroupPresentation ? "Gruppenergebnisse" : isPriorityPage ? "Priorisierung" : status === "ACCEPTING" ? "Antworten offen" : status === "LOCKED" ? "Antworten gesperrt" : "Noch nicht geöffnet"}</small></div>
+          <div className={`preview-projector ${isPdf ? "is-pdf" : isJoinPage ? "is-join" : isContentPage ? "is-content" : isWebPage ? "is-web" : isFreeformPage ? "is-freeform" : isGroupPage || isGroupDiscussion || isGroupPresentation ? "is-group" : isPriorityPage ? "is-priority" : "is-poll"}`} ref={projectorRef}>
             {isPdf && currentNode?.config.objectKey && currentNode.config.pageNumber ? (
               <div className="preview-projector-pdf"><PdfPageCanvas objectKey={currentNode.config.objectKey} pageNumber={currentNode.config.pageNumber} fitContainer /></div>
             ) : isJoinPage ? (
-              <div className="preview-join-page" style={pollWidth > 0 && pollHeight > 0 ? { width: pollWidth, height: pollHeight } : { aspectRatio: slideAspectRatio }}><div className="preview-join-copy"><h1>Jetzt teilnehmen</h1><p>QR-Code scannen oder Webadresse im Browser öffnen.</p><strong className="preview-join-domain">{previewSession ? previewPublicHost : "Raum wird erstellt…"}</strong></div><div className="preview-join-access-card"><span>{previewSession ? <QRCodeSVG value={previewJoinUrl} size={280} level="M" marginSize={1} title="QR-Code zum Vorschau-Raum" /> : <QrCode size={280} />}</span><div><small>RAUMCODE</small><strong>{formattedPreviewRoomCode}</strong></div></div></div>
+              <div className="preview-join-page" style={pollWidth > 0 && pollHeight > 0 ? { width: pollWidth, height: pollHeight } : { aspectRatio: slideAspectRatio }}>
+                <div className="preview-join-copy">
+                  <h1>Jetzt teilnehmen</h1>
+                  <p>QR-Code scannen oder Webadresse im Browser öffnen.</p>
+                  <strong className="preview-join-domain">{previewSession ? previewPublicHost : "Raum wird erstellt…"}</strong>
+                  <div className="preview-join-participants" aria-live="polite" aria-atomic="true">
+                    <UsersRound aria-hidden="true" />
+                    <strong>{previewSession?.participantCount ?? 0}</strong>
+                    <span>{previewSession?.participantCount === 1 ? "Person beigetreten" : "Personen beigetreten"}</span>
+                  </div>
+                </div>
+                <div className="preview-join-access-card">
+                  <span>{previewSession ? <QRCodeSVG value={previewJoinUrl} size={280} level="M" marginSize={1} title="QR-Code zum Vorschau-Raum" /> : <QrCode size={280} />}</span>
+                  <div><small>RAUMCODE</small><strong>{formattedPreviewRoomCode}</strong></div>
+                </div>
+              </div>
             ) : isContentPage ? (
-              <div className="preview-content-page" style={pollWidth > 0 && pollHeight > 0 ? { width: pollWidth, height: pollHeight } : { aspectRatio: slideAspectRatio }}><h1>{currentNode?.config.title || "Neue Informationsseite"}</h1><p className="preview-content-body">{currentNode?.config.body || "Ergänzen Sie hier Ihre Inhalte."}</p></div>
+              <ContentPage title={currentNode?.config.title} body={currentNode?.config.body} className="preview-content-page" style={pollWidth > 0 && pollHeight > 0 ? { width: pollWidth, height: pollHeight } : { aspectRatio: slideAspectRatio }} />
+            ) : isWebPage ? (
+              <WebPage title={currentNode?.config.title} url={currentNode?.config.url} interactive={currentNode?.config.interactive ?? true} className="preview-web-page" style={pollWidth > 0 && pollHeight > 0 ? { width: pollWidth, height: pollHeight } : { aspectRatio: slideAspectRatio }} />
             ) : isFreeformPage ? (
               <FreeformPageRenderer config={currentNode?.config ?? {}} className="preview-freeform-page" style={pollWidth > 0 && pollHeight > 0 ? { width: pollWidth, height: pollHeight } : { aspectRatio: slideAspectRatio }} />
             ) : isGroupPage ? (
@@ -574,7 +591,7 @@ export default function PreviewView() {
             ) : isMultiScale ? (
               <div className="projection-multi-scale preview-multi-scale-page" style={pollWidth > 0 && pollHeight > 0 ? { width: pollWidth, height: pollHeight } : { aspectRatio: slideAspectRatio }}><h1>{currentNode?.config.question}</h1><div className="projection-scale-list">{currentNode?.config.statements?.map((statement, statementIndex) => { const selectedIndex = previewScaleSubmittedValues[statementIndex]; const average = Number.isInteger(selectedIndex) ? Number(options[selectedIndex ?? -1]) : null; const minimum = Number(options[0] ?? currentNode?.config.min ?? 1); const maximum = Number(options.at(-1) ?? currentNode?.config.max ?? 5); const position = average === null || maximum === minimum ? null : (average - minimum) / (maximum - minimum) * 100; const statementCounts = options.map((_, optionIndex) => optionIndex === selectedIndex ? 1 : 0); return <article key={statementIndex}><div><strong>{statement}</strong>{resultsVisible && average !== null && <span>1 Bewertung</span>}</div><div className="projection-scale-track">{resultsVisible && <RatingDistribution counts={statementCounts} />}<i />{resultsVisible && position !== null && <b style={{ left: `${position}%` }}>{average?.toFixed(1)}</b>}</div></article>; })}</div><footer><span>{currentNode?.config.minLabel}</span><b>{currentNode?.config.min}–{currentNode?.config.max} Punkte</b><span>{currentNode?.config.maxLabel}</span></footer><p className="answer-count"><Check size={15} /> {previewScaleSubmittedValues.length ? 1 : 0} Personen haben bewertet</p></div>
             ) : isRating ? (
-              <div className="preview-single-scale-page" style={pollWidth > 0 && pollHeight > 0 ? { width: pollWidth, height: pollHeight } : { aspectRatio: slideAspectRatio }}><div><h1>{currentNode?.config.question}</h1><p>{resultsVisible ? "Durchschnittliche Bewertung" : "Wählen Sie eine Bewertung"}</p><RatingScaleRail min={Number(options[0] ?? currentNode?.config.min ?? 1)} max={Number(options.at(-1) ?? currentNode?.config.max ?? 5)} minLabel={currentNode?.config.minLabel} maxLabel={currentNode?.config.maxLabel} value={resultsVisible ? ratingAverage : null} valuePrefix={resultsVisible ? "Ø " : ""} counts={resultsVisible ? counts : undefined} /></div><p className="answer-count"><Check size={15} /> {total} simulierte {total === 1 ? "Bewertung" : "Bewertungen"}</p></div>
+              <div className="preview-single-scale-page" style={pollWidth > 0 && pollHeight > 0 ? { width: pollWidth, height: pollHeight } : { aspectRatio: slideAspectRatio }}><div><h1>{currentNode?.config.question}</h1>{resultsVisible && <p>Durchschnittliche Bewertung</p>}<RatingScaleRail min={Number(options[0] ?? currentNode?.config.min ?? 1)} max={Number(options.at(-1) ?? currentNode?.config.max ?? 5)} minLabel={currentNode?.config.minLabel} maxLabel={currentNode?.config.maxLabel} value={resultsVisible ? ratingAverage : null} valuePrefix={resultsVisible ? "Ø " : ""} counts={resultsVisible ? counts : undefined} /></div><p className="answer-count"><Check size={15} /> {total} simulierte {total === 1 ? "Bewertung" : "Bewertungen"}</p></div>
             ) : (
               <div className="preview-projector-poll" style={pollWidth > 0 && pollHeight > 0 ? { width: pollWidth, height: pollHeight } : { aspectRatio: slideAspectRatio }}>
                 <h1>{currentNode?.config.question ?? "Neue Frage"}</h1>
@@ -594,7 +611,7 @@ export default function PreviewView() {
               <button disabled={currentIndex >= presentation.nodes.length - 1} onClick={() => move(1)} aria-label="Nächste Seite"><ArrowRight size={18} /></button>
             </div>
             <div className="preview-moderation-controls">
-              {isGroupPresentation ? <><button disabled={!previewSession?.groupPresentation?.activeIndex} onClick={() => updatePreviewGroupIndex(Math.max(0, (previewSession?.groupPresentation?.activeIndex ?? 0) - 1))}><ArrowLeft size={17} /> Vorherige Gruppe</button><span className="preview-group-position">{previewSession?.groupPresentation?.total ? `${(previewSession.groupPresentation.activeIndex ?? 0) + 1} / ${previewSession.groupPresentation.total}` : "0 / 0"}</span><button disabled={!previewSession?.groupPresentation?.total || (previewSession.groupPresentation.activeIndex ?? 0) >= previewSession.groupPresentation.total - 1} onClick={() => updatePreviewGroupIndex((previewSession?.groupPresentation?.activeIndex ?? 0) + 1)}>Nächste Gruppe <ArrowRight size={17} /></button></> : isStaticPage ? <span className="preview-pdf-label"><FileText size={17} /> {isJoinPage ? "Teilnahmeseite" : isContentPage ? "Informationsseite" : isFreeformPage ? "Freie Seite" : "Präsentationsseite"}</span> : (
+              {isGroupPresentation ? <><button disabled={!previewSession?.groupPresentation?.activeIndex} onClick={() => updatePreviewGroupIndex(Math.max(0, (previewSession?.groupPresentation?.activeIndex ?? 0) - 1))}><ArrowLeft size={17} /> Vorherige Gruppe</button><span className="preview-group-position">{previewSession?.groupPresentation?.total ? `${(previewSession.groupPresentation.activeIndex ?? 0) + 1} / ${previewSession.groupPresentation.total}` : "0 / 0"}</span><button disabled={!previewSession?.groupPresentation?.total || (previewSession.groupPresentation.activeIndex ?? 0) >= previewSession.groupPresentation.total - 1} onClick={() => updatePreviewGroupIndex((previewSession?.groupPresentation?.activeIndex ?? 0) + 1)}>Nächste Gruppe <ArrowRight size={17} /></button></> : isStaticPage ? <span className="preview-pdf-label">{isWebPage ? <Globe2 size={17} /> : <FileText size={17} />} {isJoinPage ? "Teilnahmeseite" : isContentPage ? "Informationsseite" : isWebPage ? "Webseite" : isFreeformPage ? "Freie Seite" : "Präsentationsseite"}</span> : (
                 <>
                   <button className={status === "ACCEPTING" ? "active" : ""} onClick={togglePreviewStatus}>{status === "ACCEPTING" ? <Radio size={17} /> : <Lock size={17} />}{status === "ACCEPTING" ? "Antworten offen" : status === "LOCKED" ? "Erneut öffnen" : "Abstimmung öffnen"}</button>
                   {isGroupDiscussion ? previewSession?.discussionTimer ? <><button className={previewSession.discussionTimer.running ? "active" : ""} onClick={() => updatePreviewTimer(previewSession.discussionTimer?.running ? "PAUSE" : "START")}>{previewSession.discussionTimer.running ? <Pause size={17} /> : <Play size={17} />}{previewSession.discussionTimer.running ? "Timer pausieren" : "Timer starten"}</button><button onClick={() => updatePreviewTimer("ADD_MINUTE")}><Plus size={17} /> 1 Min.</button><button onClick={() => updatePreviewTimer("RESET")}><RotateCcw size={17} /></button></> : null : <button className={resultsVisible ? "active" : ""} onClick={togglePreviewResults}>{resultsVisible ? <Eye size={17} /> : <EyeOff size={17} />}{resultsVisible ? "Ergebnisse sichtbar" : "Ergebnisse zeigen"}</button>}

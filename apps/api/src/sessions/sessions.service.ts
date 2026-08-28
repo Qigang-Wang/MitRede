@@ -373,6 +373,9 @@ export class SessionsService {
           select: { value: true, participantId: true, updatedAt: true, participant: { select: { displayName: true } } },
         })
       : [];
+    const participantCount = await this.prisma.participantSession.count({
+      where: { liveSessionId: session.id },
+    });
     const config = (session.currentNode?.config ?? {}) as PollConfig;
     const isGroupPresentation = session.currentNode?.type === "GROUP_PRESENTATION";
     const sourceDiscussionNode = isGroupPresentation && config.sourceGroupNodeId
@@ -516,6 +519,7 @@ export class SessionsService {
         ? { ...session.currentNode, config: publicConfig }
         : null,
       timeline: includeTimeline ? (session.presentation.nodes ?? []) : undefined,
+      participantCount,
       results: { total: answers.length, counts },
       groups: sortedGroups.map((group) => ({
         ...group,

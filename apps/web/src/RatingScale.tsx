@@ -28,25 +28,23 @@ function scaleMarkers(min: number, max: number) {
 
 function distributionPaths(counts: number[]) {
   if (!counts.some((count) => count > 0)) return null;
-  const radius = Math.max(1, Math.min(6, Math.round(counts.length / 20)));
-  const sigma = Math.max(1, radius / 1.8);
-  const smoothed = counts.map((_, index) => {
-    let weighted = 0;
-    let weightTotal = 0;
-    for (let offset = -radius; offset <= radius; offset += 1) {
-      const sourceIndex = index + offset;
-      if (sourceIndex < 0 || sourceIndex >= counts.length) continue;
-      const weight = Math.exp(-(offset * offset) / (2 * sigma * sigma));
-      weighted += (counts[sourceIndex] ?? 0) * weight;
-      weightTotal += weight;
-    }
-    return weightTotal ? weighted / weightTotal : 0;
+  const lastBin = Math.max(1, counts.length - 1);
+  const sampleCount = Math.max(64, Math.min(320, counts.length * 4));
+  const bandwidth = Math.max(0.85, lastBin * 0.035);
+  const density = Array.from({ length: sampleCount }, (_, sampleIndex) => {
+    const location = sampleIndex / (sampleCount - 1) * lastBin;
+    return counts.reduce((sum, count, binIndex) => {
+      if (count <= 0) return sum;
+      const distance = (location - binIndex) / bandwidth;
+      return sum + count * Math.exp(-0.5 * distance * distance);
+    }, 0);
   });
-  const maximum = Math.max(...smoothed, 1);
+  const maximum = Math.max(...density, Number.EPSILON);
   const baseline = 80;
-  const points = smoothed.map((count, index) => ({
-    x: counts.length === 1 ? 500 : index / (counts.length - 1) * 1000,
-    y: baseline - count / maximum * 66,
+  const peakHeight = 66 * (1 - Math.exp(-maximum / 5));
+  const points = density.map((value, index) => ({
+    x: index / (density.length - 1) * 1000,
+    y: baseline - value / maximum * peakHeight,
   }));
   let line = `M ${points[0]?.x ?? 0} ${points[0]?.y ?? baseline}`;
   for (let index = 0; index < points.length - 1; index += 1) {
@@ -70,13 +68,14 @@ export function RatingDistribution({ counts }: { counts: number[] }) {
 }
 
 export function RatingScaleRail({ min, max, minLabel = "Niedrig", maxLabel = "Hoch", value = null, valuePrefix = "", counts, compact = false, className = "" }: RatingScaleRailProps) {
+  const hasValue = value !== null && Number.isFinite(value);
   return (
-    <div className={["rating-scale-rail", compact ? "compact" : "", className].filter(Boolean).join(" ")} role="img" aria-label={`Skala von ${min} bis ${max}`}>
+    <div className={["rating-scale-rail", compact ? "compact" : "", hasValue ? "has-value" : "", className].filter(Boolean).join(" ")} role="img" aria-label={`Skala von ${min} bis ${max}`}>
       <div className="rating-scale-axis">
         {counts && <RatingDistribution counts={counts} />}
         <i />
         {scaleMarkers(min, max).map((marker) => <span key={marker} style={{ left: `${scalePosition(marker, min, max)}%` }}><b /><em>{marker}</em></span>)}
-        {value !== null && Number.isFinite(value) && <strong style={{ left: `${scalePosition(value, min, max)}%` }}>{valuePrefix}{formatScaleNumber(value)}</strong>}
+        {hasValue && <strong style={{ left: `${scalePosition(value, min, max)}%` }}>{valuePrefix}{formatScaleNumber(value)}</strong>}
       </div>
       <footer><span>{minLabel}</span><span>{maxLabel}</span></footer>
     </div>

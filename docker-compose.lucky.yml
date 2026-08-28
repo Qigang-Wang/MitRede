@@ -1,0 +1,90 @@
+name: mitrede-prod
+
+# Edit only this block on the deployment server. Never commit real passwords.
+x-variables:
+  source: &source "https://github.com/Qigang-Wang/MitRede.git#main"
+  postgres-image: &postgres-image "postgres:16-alpine"
+  postgres-database: &postgres-database "mitrede"
+  postgres-user: &postgres-user "mitrede"
+  postgres-password: &postgres-password "CHANGE_ME_DATABASE_PASSWORD"
+  admin-email: &admin-email "admin@example.com"
+  admin-password: &admin-password "CHANGE_ME_ADMIN_PASSWORD"
+  public-origin: &public-origin "https://mitrede.qigang.wang,https://mitrede.ipv6.qigang.wang"
+  cookie-secure: &cookie-secure "true"
+  web-port: &web-port "8814:80"
+
+services:
+  postgres:
+    image: *postgres-image
+    environment:
+      POSTGRES_DB: *postgres-database
+      POSTGRES_USER: *postgres-user
+      POSTGRES_PASSWORD: *postgres-password
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  api:
+    build:
+      context: *source
+      target: api
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      POSTGRES_DB: *postgres-database
+      POSTGRES_USER: *postgres-user
+      POSTGRES_PASSWORD: *postgres-password
+      STORAGE_PATH: /app/storage
+      WEB_ORIGIN: *public-origin
+      ADMIN_EMAIL: *admin-email
+      ADMIN_PASSWORD: *admin-password
+      COOKIE_SECURE: *cookie-secure
+    command:
+      - sh
+      - -c
+      - |
+        export DATABASE_URL="postgresql://$${POSTGRES_USER}:$${POSTGRES_PASSWORD}@postgres:5432/$${POSTGRES_DB}?schema=public"
+        pnpm --filter @mitrede/api exec prisma migrate deploy
+        exec pnpm --filter @mitrede/api start
+    volumes:
+      - storage-data:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    init: true
+    restart: unless-stopped
+
+  web:
+    build:
+      context: *source
+      target: web
+    ports:
+      - *web-port
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx
+      - /var/run
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  storage-data:
